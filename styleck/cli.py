@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import check_document
+from .baseline import git_baseline, new_violations
 from .document import Document
 from .docgen import render, render_summary
 from .fixers import apply_fixes
@@ -23,6 +24,10 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--fix", action="store_true", help="repair what is mechanical")
     parser.add_argument("--json", action="store_true", help="machine readable output")
     parser.add_argument("--rules", help="comma separated rule ids to run")
+    parser.add_argument(
+        "--new-since", metavar="REF",
+        help="report only findings absent from this git ref (e.g. HEAD)",
+    )
     parser.add_argument("--docs", action="store_true", help="print the style guide")
     parser.add_argument("--summary", action="store_true", help="print one line per rule")
     parser.add_argument(
@@ -89,8 +94,20 @@ def run(argv: list[str]) -> int:
             if repaired != text:
                 path.write_text(repaired, encoding="utf-8")
                 text = repaired
-        violations.extend(check_document(Document(str(path), text), only))
+        document = Document(str(path), text)
+        found = check_document(document, only)
+        if args.new_since:
+            found = _only_new(path, document, found, args.new_since, only)
+        violations.extend(found)
     return _report(violations, args)
+
+
+def _only_new(path: Path, document: Document, found: list, ref: str,
+              only: frozenset[str] | None) -> list:
+    prior = git_baseline(path, ref)
+    if prior is None:
+        return found
+    return new_violations(document, found, prior, check_document(prior, only))
 
 
 def _report(violations: list, args: argparse.Namespace) -> int:

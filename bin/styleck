@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run styleck from any directory without installing it.
+# Symlink this onto your PATH, or call it by absolute path.
+here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m styleck "$@"

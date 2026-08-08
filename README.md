@@ -5,10 +5,10 @@ actually follow the rules instead of reading them once and forgetting.
 
 Scope is writing: LaTeX layout, equations, diagrams, prose. No coding standards.
 
-## Why the rules were not sticking
+## Why a prose style guide does not stick on its own
 
 A hand-written list of writing rules, handed to an agent at the start of a
-session, gets applied unevenly. Three things work against it:
+session, produces uneven results. Three things work against it:
 
 - The rules were read once at the top of a session and never checked again, so
   attention to them decayed over a long editing session.
@@ -17,30 +17,42 @@ session, gets applied unevenly. Three things work against it:
 - Thresholds were implied, not stated. "Do not make weird short lines" gives an
   agent nothing to test a line against.
 
-## What replaces it
+## What replaces the list
 
 **One source of truth.** A rule carries the instruction an agent reads *and*
 the detector that catches breaches, in the same object. `claude.md` is
 generated from the registry, so the prose and the checker cannot disagree.
 
 **A feedback loop.** A `PostToolUse` hook runs the checker after every edit to
-a `.tex` file. The agent gets its violations back immediately, by rule id.
+a `.tex` file. The agent gets its findings back immediately, by rule id.
 
-**Auto-repair.** Trailing punctuation, algorithm periods, and ragged prose
-lines are fixed without asking, so those rules need no compliance at all.
+**Only what the edit added.** The hook compares against the committed version
+of the file, so a paper written before these rules existed keeps its old
+findings and the agent hears only about what it just introduced.
+
+**Two severities.** Errors block: the agent must fix them before moving on.
+Warnings inform: they come back as advice the agent can weigh and never
+interrupt a run.
 
 ## Use
 
+`bin/styleck` runs from any directory. Symlink it onto your `PATH`, or call it
+by absolute path.
+
 ```
-python -m styleck paper.tex             # report
-python -m styleck --fix paper.tex       # repair what is mechanical
-python -m styleck --docs                # print the style guide
-python -m styleck --summary             # one line per rule
-python -m styleck --rules eq-needs-align paper.tex
+styleck paper.tex                    # report
+styleck --fix paper.tex              # repair what is mechanical
+styleck --new-since HEAD paper.tex   # only what is not yet committed
+styleck --docs                       # print the style guide
+styleck --summary                    # one line per rule
+styleck --rules eq-needs-align paper.tex
 ```
 
 Exit status is 1 when an error-level rule fires, 0 otherwise. `--warn-exit`
 makes warnings count too.
+
+Nothing here runs during a LaTeX build or can fail one. The checker reads
+`.tex` source and never invokes `pdflatex`.
 
 ## Install the hook
 
@@ -64,7 +76,21 @@ Add to `.claude/settings.json` in the repo where you write papers:
 }
 ```
 
-Set `STYLECK_AUTOFIX=0` to make the hook report without repairing.
+The hook reports without editing your files. Set `STYLECK_AUTOFIX=1` to let it
+also repair the mechanical rules in place; leave it off on a repo whose papers
+predate these rules, where a whole-file repair would bury the real change.
+
+### What an agent sees
+
+An edit that introduces an error stops the agent with the file, line, and rule:
+
+```
+styleck: your edit to paper.tex introduced 1 style error(s). Fix them now.
+  paper.tex:453:11: error[the-display] nobody says "the display"; ...
+```
+
+An edit that only raises warnings does not interrupt anything; the findings
+arrive as context alongside the tool result.
 
 ## Share the rules across repos
 

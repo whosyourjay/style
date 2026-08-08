@@ -2,8 +2,8 @@
 
 Each paper repo keeps its own hand-written claude.md for coding and workflow
 rules. The writing rules are not copied into it; they are generated into
-`writing-style.md` and pulled in with an `@writing-style.md` import line. That
-way one edit to the rules reaches every repo and no copy can drift.
+`writing-style.md` and pulled in with an `@writing-style.md` import line, so
+one edit to the rules reaches every repo and no copy can drift.
 """
 
 from __future__ import annotations
