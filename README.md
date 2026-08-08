@@ -108,9 +108,14 @@ standard output. The extractor uses Apple's PDFKit and ignores links and other
 non-editing annotations. Extract the queue before rebuilding the PDF: a LaTeX
 build replaces the PDF file and therefore discards its embedded annotations.
 
-## Install the hook
+## Install the agent hooks
 
-Add to `.claude/settings.json` in the repo where you write papers:
+The same script supports Claude Code and Codex. It understands Claude's
+`file_path` input and extracts every touched path from Codex's `apply_patch`
+input.
+
+For Claude Code, add this to `.claude/settings.json` in the repo where you
+write papers:
 
 ```json
 {
@@ -130,6 +135,32 @@ Add to `.claude/settings.json` in the repo where you write papers:
 }
 ```
 
+For Codex, add this to `~/.codex/hooks.json` to use it in every repo, or to
+`<repo>/.codex/hooks.json` to keep it project-local:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /absolute/path/to/style/hooks/styleck_hook.py",
+            "timeout": 30,
+            "statusMessage": "Checking writing style"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Codex asks you to review a new or changed command hook before it runs. Use
+`/hooks` once after installing or changing this hook.
+
 The hook reports without editing your files. Set `STYLECK_AUTOFIX=1` to let it
 also repair the mechanical rules in place; leave it off on a repo whose papers
 predate these rules, where a whole-file repair would bury the real change.
@@ -145,6 +176,18 @@ styleck: your edit to paper.tex introduced 1 style error(s). Fix them now.
 
 An edit that only raises warnings does not interrupt anything; the findings
 arrive as context alongside the tool result.
+
+## Install the Git pre-commit hook
+
+Link the shared hook into any paper repository:
+
+```sh
+ln -s /absolute/path/to/style/hooks/styleck_pre_commit.py .git/hooks/pre-commit
+```
+
+It checks the exact versions in Git's index, so unstaged edits do not affect a
+commit. New error-level findings stop the commit; warnings are printed but do
+not stop it. Existing findings from `HEAD` stay silent.
 
 ## Share the rules across repos
 

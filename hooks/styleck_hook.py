@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""PostToolUse hook that enforces the writing rules.
+"""Claude Code and Codex PostToolUse hook for the writing rules.
 
-Wire it to Edit, Write, and MultiEdit. After the agent touches a paper the
-hook checks it and reports what the edit introduced.
+Wire it to Edit, Write, and MultiEdit in Claude Code, or to apply_patch in
+Codex. After the agent touches a paper the hook checks every changed file and
+reports what the edit introduced.
 
 Only what the edit added is reported. A paper written before these rules
 existed keeps its old findings; the hook compares against the committed
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -33,6 +35,10 @@ from styleck.rule import ERROR, MANUAL  # noqa: E402
 CHECKED = {".tex", ".sty", ".cls", ".tikz"}
 BLOCK_EXIT = 2
 LAUNCHER = Path(__file__).resolve().parent.parent / "bin" / "styleck"
+PATCH_PATH = re.compile(
+    r"^\*\*\* (?:Add|Delete|Update) File: (.+)$|^\*\*\* Move to: (.+)$",
+    re.MULTILINE,
+)
 
 
 def _payload() -> dict:
@@ -42,9 +48,35 @@ def _payload() -> dict:
         return {}
 
 
-def _target(payload: dict) -> Path | None:
-    raw = (payload.get("tool_input") or {}).get("file_path")
-    return Path(raw) if raw else None
+def _targets(payload: dict) -> list[Path]:
+    """Return paths from either agent's tool payload, in edit order."""
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return []
+
+    raw_paths: list[str] = []
+    file_path = tool_input.get("file_path")
+    if isinstance(file_path, str) and file_path:
+        raw_paths.append(file_path)
+
+    # Codex sends the apply_patch body in tool_input.command. Accept `patch`
+    # too so recorded fixtures from older builds remain useful.
+    patch = tool_input.get("command", tool_input.get("patch", ""))
+    if isinstance(patch, str):
+        for match in PATCH_PATH.finditer(patch):
+            raw_paths.append(match.group(1) or match.group(2))
+
+    cwd = Path(payload.get("cwd") or Path.cwd())
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for raw in raw_paths:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = cwd / path
+        if path not in seen:
+            seen.add(path)
+            paths.append(path)
+    return paths
 
 
 def _findings(path: Path, text: str) -> list:
@@ -77,26 +109,37 @@ def _autofix(path: Path, text: str) -> tuple[str, list[str]]:
 
 
 def check(payload: dict) -> int:
-    path = _target(payload)
-    if path is None or path.suffix not in CHECKED or not path.is_file():
-        return 0
-    text, repaired = _autofix(path, path.read_text(encoding="utf-8", errors="replace"))
-    violations = _findings(path, text)
-    errors = [v for v in violations if v.severity == ERROR]
-    warnings = [v for v in violations if v.severity != ERROR]
-    if not violations and not repaired:
+    reports = []
+    for path in _targets(payload):
+        if path.suffix not in CHECKED or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        text, repaired = _autofix(path, text)
+        violations = _findings(path, text)
+        if violations or repaired:
+            reports.append((path, repaired, violations))
+    if not reports:
         return 0
 
-    preamble = []
-    if repaired:
-        preamble.append(
-            f"styleck repaired {path.name} for you ({', '.join(repaired)}). "
-            "Re-read the file before editing it again."
-        )
-    if errors:
-        sys.stderr.write("\n".join(preamble + _block_text(path, errors, warnings)) + "\n")
+    messages = []
+    blocking = False
+    for path, repaired, violations in reports:
+        if repaired:
+            messages.append(
+                f"styleck repaired {path.name} for you ({', '.join(repaired)}). "
+                "Re-read the file before editing it again."
+            )
+        errors = [v for v in violations if v.severity == ERROR]
+        warnings = [v for v in violations if v.severity != ERROR]
+        if errors:
+            blocking = True
+            messages.extend(_block_text(path, errors, warnings))
+        else:
+            messages.extend(_advice_text(path, warnings))
+    if blocking:
+        sys.stderr.write("\n".join(messages) + "\n")
         return BLOCK_EXIT
-    _emit_context("\n".join(preamble + _advice_text(path, warnings)))
+    _emit_context("\n".join(messages))
     return 0
 
 
