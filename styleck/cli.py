@@ -30,10 +30,11 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--sync", metavar="ROOT",
-        help="regenerate claude.md in every directory under ROOT that has one",
+        help="write writing-style.md into every directory under ROOT with a claude.md",
     )
     parser.add_argument(
-        "--force", action="store_true", help="with --sync, replace hand-written files"
+        "--add-import", action="store_true",
+        help="with --sync, append the @writing-style.md import to each claude.md",
     )
     return parser.parse_args(argv)
 
@@ -71,8 +72,8 @@ def run(argv: list[str]) -> int:
         return 0
     if args.sync:
         root = Path(args.sync)
-        for path, outcome in sync(find_targets(root), args.force):
-            sys.stdout.write(f"{outcome:12s} {path}\n")
+        for path, outcome in sync(find_targets(root), args.add_import):
+            sys.stdout.write(f"{path}: {outcome}\n")
         return 0
     only = _selected_rules(args.rules)
     files = _collect(args.paths)
