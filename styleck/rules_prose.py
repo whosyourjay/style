@@ -79,8 +79,13 @@ def check_the_display(document: Document) -> Iterable[Violation]:
     section="Write like a human",
     severity=WARN,
     applies_to=PROSE_SUFFIXES,
-    summary="Do not end a sentence with an -ly adverb.",
-    detail="Cut it, or move the meaning into the verb.",
+    summary="Test a sentence that ends in an -ly adverb: delete it and reread.",
+    detail=(
+        "This is a smell, not a ban. If the sentence still says what you mean "
+        "without the adverb, the adverb was padding. If deleting it loses "
+        "something, keep it. \"Applied unevenly\" survives the test; \"arrange "
+        "the deck cleanly\" does not."
+    ),
     bad="We arrange the deck cleanly.",
     good="We sort the deck.",
 )
@@ -91,7 +96,8 @@ def check_adverb_tail(document: Document) -> Iterable[Violation]:
             continue
         yield make(
             document, "adverb-tail", match.start(1),
-            f"sentence ends with the adverb '{word}'; cut it or fold it into the verb",
+            f"sentence ends with '{word}'; delete it and reread — if nothing is "
+            "lost, leave it out",
         )
 
 

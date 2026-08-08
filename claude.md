@@ -120,8 +120,10 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `The deadline is met by the schedule constructed above.`
   ✓ `The schedule above meets every deadline.`
 
-- **adverb-tail** (warn) — Do not end a sentence with an -ly adverb.
-  Cut it, or move the meaning into the verb.
+- **adverb-tail** (warn) — Test a sentence that ends in an -ly adverb: delete it and reread.
+  This is a smell, not a ban. If the sentence still says what you mean without the adverb, the
+  adverb was padding. If deleting it loses something, keep it. "Applied unevenly" survives the
+  test; "arrange the deck cleanly" does not.
   ✗ `We arrange the deck cleanly.`
   ✓ `We sort the deck.`
 

@@ -8,7 +8,7 @@ Scope is writing: LaTeX layout, equations, diagrams, prose. No coding standards.
 ## Why a prose style guide does not stick on its own
 
 A hand-written list of writing rules, handed to an agent at the start of a
-session, produces uneven results. Three things work against it:
+session, gets applied unevenly. Three things work against it:
 
 - The rules were read once at the top of a session and never checked again, so
   attention to them decayed over a long editing session.

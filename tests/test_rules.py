@@ -128,6 +128,13 @@ class TestProse(unittest.TestCase):
     def test_trailing_adverb_is_flagged(self):
         self.assertIn("adverb-tail", ids(tex("We arrange the deck cleanly.")))
 
+    def test_adverb_tail_message_asks_rather_than_orders(self):
+        found = [v for v in check_document(tex("It is applied unevenly."))
+                 if v.rule_id == "adverb-tail"]
+        self.assertEqual(len(found), 1)
+        self.assertIn("delete it and reread", found[0].message)
+        self.assertEqual(found[0].severity, "warn")
+
     def test_respectively_is_allowed(self):
         self.assertNotIn("adverb-tail", ids(tex("The columns are $i$ and $j$, respectively.")))
 
