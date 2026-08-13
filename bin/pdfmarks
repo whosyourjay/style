@@ -1,0 +1,221 @@
+#!/usr/bin/env -S swift -module-cache-path /tmp/styleck-pdfmarks-swift-cache
+
+import Foundation
+import PDFKit
+
+let supportedKinds: [String: (kind: String, action: String)] = [
+    "Highlight": ("highlight", "contextual_revision"),
+    "Underline": ("underline", "local_revision"),
+    "StrikeOut": ("strikethrough", "delete"),
+]
+
+struct Geometry: Codable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+}
+
+struct Context: Codable {
+    let before: String
+    let after: String
+}
+
+struct Mark: Codable {
+    let id: String
+    let kind: String
+    let action: String
+    let page: Int
+    let text: String
+    let context: Context
+    let bounds: Geometry?
+    let note: String?
+}
+
+struct Review: Codable {
+    let version: Int
+    let pdf: String
+    let annotations: [Mark]
+}
+
+func fail(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("pdfmarks: \(message)\n".utf8))
+    exit(2)
+}
+
+func usage() -> Never {
+    fail("usage: pdfmarks [--pretty] INPUT.pdf [OUTPUT.json|-]")
+}
+
+func normalized(_ text: String) -> String {
+    text.components(separatedBy: .whitespacesAndNewlines)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+}
+
+func rounded(_ value: CGFloat) -> Double {
+    (Double(value) * 1000).rounded() / 1000
+}
+
+func clamped(_ range: NSRange, to length: Int) -> NSRange {
+    let start = max(0, min(range.location, length))
+    let end = max(start, min(range.location + range.length, length))
+    return NSRange(location: start, length: end - start)
+}
+
+func ranges(for annotation: PDFAnnotation, on page: PDFPage) -> [NSRange] {
+    var result: [NSRange] = []
+    let points = annotation.quadrilateralPoints ?? []
+
+    // PDFKit exposes Preview's quad points relative to the annotation bounds.
+    // Selecting through each quad's horizontal midpoint avoids pulling text
+    // from adjacent lines when an annotation has an unusually tall box.
+    if points.count >= 4 {
+        for offset in stride(from: 0, to: points.count - 3, by: 4) {
+            let quad = points[offset..<(offset + 4)].map(\.pointValue)
+            let xs = quad.map { $0.x + annotation.bounds.minX }
+            let ys = quad.map { $0.y + annotation.bounds.minY }
+            guard let minX = xs.min(), let maxX = xs.max(),
+                  let minY = ys.min(), let maxY = ys.max() else {
+                continue
+            }
+
+            let inset = min(0.1, max(0, (maxX - minX) / 4))
+            let midpointY = (minY + maxY) / 2
+            guard let selection = page.selection(
+                from: CGPoint(x: minX + inset, y: midpointY),
+                to: CGPoint(x: maxX - inset, y: midpointY)
+            ) else {
+                continue
+            }
+
+            for index in 0..<selection.numberOfTextRanges(on: page) {
+                result.append(selection.range(at: index, on: page))
+            }
+        }
+    }
+
+    if result.isEmpty, let selection = page.selection(for: annotation.bounds) {
+        for index in 0..<selection.numberOfTextRanges(on: page) {
+            result.append(selection.range(at: index, on: page))
+        }
+    }
+
+    return result
+        .filter { $0.location != NSNotFound && $0.length > 0 }
+        .sorted { lhs, rhs in
+            lhs.location == rhs.location ? lhs.length < rhs.length : lhs.location < rhs.location
+        }
+}
+
+func textAndContext(
+    for annotation: PDFAnnotation,
+    on page: PDFPage,
+    contextLength: Int = 80
+) -> (text: String, context: Context) {
+    let pageText = page.string ?? ""
+    let nsText = pageText as NSString
+    let selections = ranges(for: annotation, on: page)
+
+    guard let first = selections.first, let last = selections.last else {
+        let fallback = normalized(page.selection(for: annotation.bounds)?.string ?? "")
+        return (fallback, Context(before: "", after: ""))
+    }
+
+    let validSelections = selections.map { clamped($0, to: nsText.length) }
+    let selected = validSelections
+        .map { normalized(nsText.substring(with: $0)) }
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+
+    let selectionStart = first.location
+    let selectionEnd = last.location + last.length
+    let beforeRange = clamped(
+        NSRange(location: selectionStart - contextLength, length: contextLength),
+        to: nsText.length
+    )
+    let afterRange = clamped(
+        NSRange(location: selectionEnd, length: contextLength),
+        to: nsText.length
+    )
+
+    return (
+        selected,
+        Context(
+            before: normalized(nsText.substring(with: beforeRange)),
+            after: normalized(nsText.substring(with: afterRange))
+        )
+    )
+}
+
+var arguments = Array(CommandLine.arguments.dropFirst())
+let pretty = arguments.contains("--pretty")
+arguments.removeAll { $0 == "--pretty" }
+guard (1...2).contains(arguments.count), !arguments.contains(where: { $0.hasPrefix("--") }) else {
+    usage()
+}
+
+let inputArgument = arguments[0]
+let outputArgument = arguments.count == 2 ? arguments[1] : "review.json"
+let inputURL = URL(fileURLWithPath: inputArgument)
+guard FileManager.default.fileExists(atPath: inputURL.path) else {
+    fail("input PDF does not exist: \(inputArgument)")
+}
+guard let document = PDFDocument(url: inputURL) else {
+    fail("could not open PDF: \(inputArgument)")
+}
+
+var marks: [Mark] = []
+for pageIndex in 0..<document.pageCount {
+    guard let page = document.page(at: pageIndex) else { continue }
+    var markIndex = 0
+
+    for annotation in page.annotations {
+        guard let pdfType = annotation.type, let mapping = supportedKinds[pdfType] else {
+            continue
+        }
+        markIndex += 1
+        let extracted = textAndContext(for: annotation, on: page)
+        let bounds = annotation.bounds
+        let note = normalized(annotation.contents ?? "")
+        let fallbackGeometry = extracted.text.isEmpty
+            ? Geometry(
+                x: rounded(bounds.minX),
+                y: rounded(bounds.minY),
+                width: rounded(bounds.width),
+                height: rounded(bounds.height)
+            )
+            : nil
+
+        marks.append(Mark(
+            id: String(format: "p%03d-m%03d", pageIndex + 1, markIndex),
+            kind: mapping.kind,
+            action: mapping.action,
+            page: pageIndex + 1,
+            text: extracted.text,
+            context: extracted.context,
+            bounds: fallbackGeometry,
+            note: note.isEmpty ? nil : note
+        ))
+    }
+}
+
+let review = Review(version: 1, pdf: inputArgument, annotations: marks)
+let encoder = JSONEncoder()
+encoder.outputFormatting = pretty ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+
+do {
+    var data = try encoder.encode(review)
+    data.append(0x0A)
+    if outputArgument == "-" {
+        FileHandle.standardOutput.write(data)
+    } else {
+        let outputURL = URL(fileURLWithPath: outputArgument)
+        try data.write(to: outputURL, options: .atomic)
+        FileHandle.standardError.write(
+            Data("pdfmarks: wrote \(marks.count) annotations to \(outputArgument)\n".utf8)
+        )
+    }
+} catch {
+    fail(error.localizedDescription)
+}

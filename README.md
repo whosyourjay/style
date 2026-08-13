@@ -54,6 +54,27 @@ makes warnings count too.
 Nothing here runs during a LaTeX build or can fail one. The checker reads
 `.tex` source and never invokes `pdflatex`.
 
+## Extract PDF edit marks
+
+On macOS, `bin/pdfmarks` turns Preview markup into a compact review queue
+without rendering the PDF:
+
+```
+bin/pdfmarks --pretty paper.pdf review.json
+```
+
+The output records the selected text, page, nearby text, optional annotation
+note, and fallback geometry. Its three markup types carry editing intent, so
+notes are not required:
+
+- highlight: inspect the context and resolve the underlying problem;
+- underline: make a local repair while preserving the intended meaning;
+- strikethrough: delete the selected text.
+
+Omit the output path to write `review.json`, or use `-` to write JSON to
+standard output. The extractor uses Apple's PDFKit and ignores links and other
+non-editing annotations.
+
 ## Install the hook
 
 Add to `.claude/settings.json` in the repo where you write papers:
