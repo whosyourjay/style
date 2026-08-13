@@ -1,65 +1,73 @@
 # styleck
 
-A linter for writing quality in math papers, and the tooling to make an agent
-actually follow the rules instead of reading them once and forgetting.
+`styleck` helps a human and an editing agent revise mathematical papers. It
+turns PDF markup into a structured edit queue and checks the resulting LaTeX
+for common writing problems. It reads source files only: it never compiles a
+paper or participates in a LaTeX build.
 
-Scope is writing: LaTeX layout, equations, diagrams, prose. No coding standards.
+![Preview annotations extracted into a JSON edit queue](assets/pdfmarks-workflow.png)
 
-## Why a prose style guide does not stick on its own
+## Quick start
 
-A hand-written list of writing rules, handed to an agent at the start of a
-session, gets applied unevenly. Three things work against it:
+The source checker requires Python 3. The PDF annotation extractor requires
+macOS because it uses Preview's PDFKit annotations.
 
-- The rules were read once at the top of a session and never checked again, so
-  attention to them decayed over a long editing session.
-- Several were unverifiable while writing. "At least 3 lines of explanation
-  between equations" needs counting, which nothing prompted the agent to do.
-- Thresholds were implied, not stated. "Do not make weird short lines" gives an
-  agent nothing to test a line against.
+```sh
+# Optional: make the commands available everywhere
+ln -s /absolute/path/to/style/bin/styleck /usr/local/bin/styleck
+ln -s /absolute/path/to/style/bin/pdfmarks /usr/local/bin/pdfmarks
 
-## What replaces the list
-
-**One source of truth.** A rule carries the instruction an agent reads *and*
-the detector that catches breaches, in the same object. `claude.md` is
-generated from the registry, so the prose and the checker cannot disagree.
-
-**A feedback loop.** A `PostToolUse` hook runs the checker after every edit to
-a `.tex` file. The agent gets its findings back immediately, by rule id.
-
-**Only what the edit added.** The hook compares against the committed version
-of the file, so a paper written before these rules existed keeps its old
-findings and the agent hears only about what it just introduced.
-
-**Two severities.** Errors block: the agent must fix them before moving on.
-Warnings inform: they come back as advice the agent can weigh and never
-interrupt a run.
-
-## Use
-
-`bin/styleck` runs from any directory. Symlink it onto your `PATH`, or call it
-by absolute path.
-
+styleck paper.tex
+styleck --fix paper.tex
 ```
-styleck paper.tex                    # report
-styleck --fix paper.tex              # repair what is mechanical
-styleck --new-since HEAD paper.tex   # only what is not yet committed
-styleck --docs                       # print the style guide
-styleck --summary                    # one line per rule
-styleck --rules eq-needs-align paper.tex
+
+`styleck` reports errors and warnings with a rule id. `--fix` applies only
+mechanical repairs. To see the rule behind a finding, run
+`styleck --rules RULE-ID paper.tex`; to print the full writing guide, run
+`styleck --docs`.
+
+## Review a PDF
+
+In Preview, use three markup tools without writing notes:
+
+- **Highlight**: something is wrong; inspect the surrounding argument and
+  revise it.
+- **Underline**: make a local repair while preserving the intended meaning.
+- **Strikethrough**: delete the selected text.
+
+Save the annotated PDF, then extract it immediately:
+
+```sh
+pdfmarks --pretty review.pdf review.json
+```
+
+The JSON records the selected text, page, nearby text, annotation type, and
+optional note. A useful instruction to an editing agent is:
+
+> Read `review.json` and reconcile every annotation against the current
+> `.tex`. Treat stale annotations as intent rather than literal locations.
+
+Extract before rebuilding the PDF. A LaTeX build may replace the annotated
+file and discard its embedded markup. Keep the source PDF or a timestamped
+copy until the edits are accepted.
+
+## Check a paper
+
+```sh
+styleck paper.tex                    # all findings
+styleck --new-since HEAD paper.tex   # findings introduced by this change
 styleck --concordance the paper.tex  # inspect every prose occurrence
 ```
 
-Exit status is 1 when an error-level rule fires, 0 otherwise. `--warn-exit`
-makes warnings count too.
+Errors return a nonzero exit status; warnings are advisory unless
+`--warn-exit` is supplied. The checker skips mathematics, comments, diagrams,
+and verbatim material when applying prose rules.
 
-Nothing here runs during a LaTeX build or can fail one. The checker reads
-`.tex` source and never invokes `pdflatex`.
-
-## Declare background vocabulary
+### Declare assumed vocabulary
 
 Put field-standard terms that need no local definition in `.styleck-terms`,
-one phrase per line. A source-specific `paper-name.styleck-terms` extends the
-project list for `paper-name.tex`. For example:
+one per line. A source-specific `paper-name.styleck-terms` extends the project
+list for `paper-name.tex`.
 
 ```text
 capacity
@@ -68,172 +76,16 @@ relative entropy
 renewal process
 ```
 
-An `@relative/path.tex` line imports the terms explicitly marked with
-`\term{...}` in another source. An `@relative/path.styleck-terms` line imports
-another list. Imports are resolved relative to the list containing them.
+An `@relative/path.styleck-terms` line imports another vocabulary list; an
+`@relative/path.tex` line imports terms explicitly marked with `\term{...}` in
+that source.
 
-The checker warns when a background term is marked as newly introduced, when
-`the <background term> is $f(x)=\cdots$` rederives it from a formula, and when
-a literal multiword `\term{...}` is never reused. It cannot reliably infer
-whether every unmarked noun phrase is field-standard; the generated guide
-therefore retains that part as a judgment rule.
+## Optional automation
 
-For a high-recall lexical pass, `--concordance WORD` prints every whole-word
-occurrence outside mathematics, comments, diagrams, and verbatim material.
-Running `styleck --concordance the paper.tex` is useful after ordinary checks:
-each definite article should point to a noun the reader can identify without
-searching backward. The `vague-referent` rule automatically reports common
-abstract cases, including `the bound`, `the same expression`, and `the
-functional`.
+The repository includes post-edit hooks for Codex and Claude Code and a Git
+pre-commit hook. They report only findings introduced by the current edit, so
+an older paper does not have to be cleaned all at once. See
+[Automation and hooks](docs/automation.md).
 
-## Extract PDF edit marks
-
-On macOS, `bin/pdfmarks` turns Preview markup into a compact review queue
-without rendering the PDF:
-
-```
-bin/pdfmarks --pretty paper.pdf review.json
-```
-
-The output records the selected text, page, nearby text, optional annotation
-note, and fallback geometry. Its three markup types carry editing intent, so
-notes are not required:
-
-- highlight: inspect the context and resolve the underlying problem;
-- underline: make a local repair while preserving the intended meaning;
-- strikethrough: delete the selected text.
-
-Omit the output path to write `review.json`, or use `-` to write JSON to
-standard output. The extractor uses Apple's PDFKit and ignores links and other
-non-editing annotations. Extract the queue before rebuilding the PDF: a LaTeX
-build replaces the PDF file and therefore discards its embedded annotations.
-
-## Install the agent hooks
-
-The same script supports Claude Code and Codex. It understands Claude's
-`file_path` input and extracts every touched path from Codex's `apply_patch`
-input.
-
-For Claude Code, add this to `.claude/settings.json` in the repo where you
-write papers:
-
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 /absolute/path/to/style/hooks/styleck_hook.py"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-For Codex, add this to `~/.codex/hooks.json` to use it in every repo, or to
-`<repo>/.codex/hooks.json` to keep it project-local:
-
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "^apply_patch$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 /absolute/path/to/style/hooks/styleck_hook.py",
-            "timeout": 30,
-            "statusMessage": "Checking writing style"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Codex asks you to review a new or changed command hook before it runs. Use
-`/hooks` once after installing or changing this hook.
-
-The hook reports without editing your files. Set `STYLECK_AUTOFIX=1` to let it
-also repair the mechanical rules in place; leave it off on a repo whose papers
-predate these rules, where a whole-file repair would bury the real change.
-
-### What an agent sees
-
-An edit that introduces an error stops the agent with the file, line, and rule:
-
-```
-styleck: your edit to paper.tex introduced 1 style error(s). Fix them now.
-  paper.tex:453:11: error[the-display] nobody says "the display"; ...
-```
-
-An edit that only raises warnings does not interrupt anything; the findings
-arrive as context alongside the tool result.
-
-## Install the Git pre-commit hook
-
-Link the shared hook into any paper repository:
-
-```sh
-ln -s /absolute/path/to/style/hooks/styleck_pre_commit.py .git/hooks/pre-commit
-```
-
-It checks the exact versions in Git's index, so unstaged edits do not affect a
-commit. New error-level findings stop the commit; warnings are printed but do
-not stop it. Existing findings from `HEAD` stay silent.
-
-## Share the rules across repos
-
-Each paper repo keeps its own hand-written `claude.md` for coding and workflow
-rules. The writing rules are generated into `writing-style.md` next to it and
-pulled in with an import line, so they stay in one place:
-
-```
-python -m styleck --sync ~/research               # write writing-style.md
-python -m styleck --sync ~/research --add-import  # and add @writing-style.md
-```
-
-A `writing-style.md` that this tool did not generate is never overwritten.
-
-## Add a rule
-
-Write the check in `styleck/rules_tex.py` or `styleck/rules_prose.py`:
-
-```python
-@register(
-    id="eq-trailing-punct",
-    section="Equations",
-    severity=ERROR,
-    applies_to=TEX,
-    summary="Put no punctuation between display equations or at the end of one.",
-    bad="\\[ x = y . \\]",
-    good="\\[ x = y \\]",
-)
-def check_eq_trailing_punct(document): ...
-```
-
-The guide picks it up on the next `--docs`. A rule with no possible checker
-goes in `styleck/rules_manual.py` via `manual(...)`; it appears in the guide
-tagged **judgment** and is never reported as a violation.
-
-To make it auto-fixable, add an entry to `FIXERS` in `styleck/fixers.py`. The
-fuzz tests then require that fixing is idempotent, loses no words, and leaves
-no violation of that rule behind.
-
-## Tests
-
-```
-python -m unittest discover -s tests
-```
-
-`test_fuzz.py` asserts invariants over generated documents: the scanner covers
-its input exactly, nothing crashes on malformed LaTeX, and a fixed file stays
-fixed. The linter also runs clean on its own source and on the guide it
-generates.
+For the checker architecture, rule authoring, synchronization, and tests, see
+[Developing styleck](docs/development.md).
