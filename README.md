@@ -73,7 +73,8 @@ notes are not required:
 
 Omit the output path to write `review.json`, or use `-` to write JSON to
 standard output. The extractor uses Apple's PDFKit and ignores links and other
-non-editing annotations.
+non-editing annotations. Extract the queue before rebuilding the PDF: a LaTeX
+build replaces the PDF file and therefore discards its embedded annotations.
 
 ## Install the hook
 
