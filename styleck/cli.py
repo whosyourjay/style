@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import check_document
 from .baseline import git_baseline, new_violations
+from .concordance import concordance
 from .document import Document
 from .docgen import render, render_summary
 from .fixers import apply_fixes
@@ -30,6 +31,10 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--docs", action="store_true", help="print the style guide")
     parser.add_argument("--summary", action="store_true", help="print one line per rule")
+    parser.add_argument(
+        "--concordance", metavar="WORD",
+        help="print every whole-word occurrence in source prose",
+    )
     parser.add_argument(
         "--warn-exit", action="store_true", help="exit nonzero on warnings too"
     )
@@ -85,6 +90,18 @@ def run(argv: list[str]) -> int:
     if not files:
         sys.stderr.write("styleck: no files to check\n")
         return 2
+    if args.concordance:
+        try:
+            for path in files:
+                document = Document(
+                    str(path), path.read_text(encoding="utf-8", errors="replace")
+                )
+                for entry in concordance(document, args.concordance):
+                    sys.stdout.write(entry.format() + "\n")
+        except ValueError as error:
+            sys.stderr.write(f"styleck: {error}\n")
+            return 2
+        return 0
 
     violations = []
     for path in files:

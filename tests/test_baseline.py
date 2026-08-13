@@ -39,7 +39,7 @@ class TestNewViolations(unittest.TestCase):
 
     def test_a_new_finding_is_reported(self):
         added = LEGACY + "Combining the display with Lemma 2 gives the bound.\n"
-        self.assertEqual(fresh(added, LEGACY), ["the-display"])
+        self.assertEqual(fresh(added, LEGACY), ["the-display", "vague-referent"])
 
     def test_inserting_text_does_not_resurface_later_findings(self):
         shifted = PREAMBLE + "A new opening sentence sits here.\n" + LEGACY[len(PREAMBLE):]

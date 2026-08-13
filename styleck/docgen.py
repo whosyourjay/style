@@ -30,6 +30,7 @@ Run it yourself at any time:
 ```
 python -m styleck path/to/paper.tex        # report
 python -m styleck --fix path/to/paper.tex  # repair what is mechanical
+python -m styleck --concordance the path/to/paper.tex  # inspect every `the`
 ```
 
 Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.

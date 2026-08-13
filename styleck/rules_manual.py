@@ -68,6 +68,21 @@ manual(
 )
 
 manual(
+    id="background-or-defined",
+    section="Write like a human",
+    summary="Treat a technical phrase as either background knowledge or a defined term.",
+    detail=(
+        "Record field-standard vocabulary in the applicable `.styleck-terms` "
+        "file. Introduce other technical phrases with `\\term{...}` at first "
+        "substantive use, but only when the paper will reuse the name. If a "
+        "phrase is neither background nor worth reusing, replace it with plain "
+        "language or give its symbol a direct definition. No lexical checker "
+        "can infer this distinction reliably, so audit unfamiliar noun phrases "
+        "by hand."
+    ),
+)
+
+manual(
     id="active-voice",
     section="Write like a human",
     summary="Put the named actor before the verb.",

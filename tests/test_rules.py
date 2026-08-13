@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,15 @@ class TestTrailingPunctuation(unittest.TestCase):
     def test_comma_before_row_break_is_flagged(self):
         body = "\\begin{align}\n  a &= b, \\\\\n  c &= d\n\\end{align}"
         self.assertIn("eq-trailing-punct", ids(tex(body)))
+
+    def test_period_before_label_is_flagged(self):
+        body = "\\begin{equation}\n  x = y. \\label{eq:x}\n\\end{equation}"
+        self.assertIn("eq-trailing-punct", ids(tex(body)))
+
+    def test_fix_preserves_label(self):
+        source = PREAMBLE + "\\[\n  x = y. \\label{eq:x}\n\\]\n"
+        expected = PREAMBLE + "\\[\n  x = y \\label{eq:x}\n\\]\n"
+        self.assertEqual(apply_fixes("t.tex", source), expected)
 
     def test_clean_display_passes(self):
         self.assertNotIn("eq-trailing-punct", ids(tex("\\[\n  x = y\n\\]")))
@@ -180,6 +190,25 @@ class TestProse(unittest.TestCase):
         body = r"Theorem~\ref{thm:main} permits equality."
         self.assertNotIn("precise-reference", ids(tex(body)))
 
+    def test_modified_lemma_reference_is_flagged(self):
+        body = "The clean alignment lemma supplies the factorization."
+        self.assertIn("precise-reference", ids(tex(body)))
+
+    def test_proof_of_numbered_theorem_passes(self):
+        body = r"Only one change to the proof of Theorem~\ref{thm:main} is needed."
+        self.assertNotIn("precise-reference", ids(tex(body)))
+
+    def test_bare_abstract_referent_is_flagged(self):
+        self.assertIn("vague-referent", ids(tex("The functional is bounded.")))
+
+    def test_modified_abstract_referent_is_flagged(self):
+        body = "The same high-entropy dichotomy proves the converse."
+        self.assertIn("vague-referent", ids(tex(body)))
+
+    def test_equation_qualified_estimate_passes(self):
+        body = r"The estimate \eqref{eq:local} bounds the error."
+        self.assertNotIn("vague-referent", ids(tex(body)))
+
     def test_unspecified_convention_is_flagged(self):
         body = "A fixed convention handles the final coordinate."
         self.assertIn("state-conventions", ids(tex(body)))
@@ -216,6 +245,70 @@ class TestTermFirstUse(unittest.TestCase):
     def test_single_word_terms_remain_judgment_calls(self):
         body = "An anchor comes first. We mark an \\term{anchor} later."
         self.assertNotIn("term-first-use", ids(tex(body)))
+
+
+class TestTermVocabulary(unittest.TestCase):
+    def document(self, root: Path, body: str) -> Document:
+        return Document(str(root / "paper.tex"), PREAMBLE + body + "\n\\end{document}\n")
+
+    def test_background_term_is_not_marked_as_new(self):
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / "paper.styleck-terms").write_text("relative entropy\n")
+            document = self.document(root, r"The \term{relative entropy} is finite.")
+            self.assertIn("term-background", ids(document))
+
+    def test_source_file_can_supply_background_terms(self):
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / "source.tex").write_text(r"A \term{renewal process}.")
+            (root / "paper.styleck-terms").write_text("@source.tex\n")
+            document = self.document(root, r"A \term{renewal process} appears.")
+            self.assertIn("term-background", ids(document))
+
+    def test_background_formula_definition_is_flagged(self):
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / "paper.styleck-terms").write_text("binary entropy function\n")
+            body = (
+                "The binary entropy function is\n"
+                r"$h_2(p)=-p\log p-(1-p)\log(1-p)$."
+            )
+            self.assertIn("background-redefinition", ids(self.document(root, body)))
+
+    def test_background_property_is_not_a_redefinition(self):
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / "paper.styleck-terms").write_text("relative entropy\n")
+            document = self.document(root, "Relative entropy is nonnegative.")
+            self.assertNotIn("background-redefinition", ids(document))
+
+    def test_background_notation_convention_is_allowed(self):
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / "paper.styleck-terms").write_text("relative entropy\n")
+            document = self.document(root, r"Write $D(P\Vert Q)$ for relative entropy.")
+            self.assertNotIn("background-redefinition", ids(document))
+
+    def test_single_use_multiword_term_is_flagged(self):
+        document = tex(r"Let \term{window family} denote the intervals.")
+        self.assertIn("term-single-use", ids(document))
+
+    def test_reused_multiword_term_passes(self):
+        body = r"Let \term{window family} denote the intervals. The window family is finite."
+        self.assertNotIn("term-single-use", ids(tex(body)))
+
+    def test_plural_reuse_passes(self):
+        body = r"Define an \term{alignment path}. The two alignment paths then meet."
+        self.assertNotIn("term-single-use", ids(tex(body)))
+
+    def test_definition_title_does_not_count_as_reuse(self):
+        body = (
+            r"\begin{definition}[Window family]" "\n"
+            r"Let \term{window family} denote the intervals." "\n"
+            r"\end{definition}"
+        )
+        self.assertIn("term-single-use", ids(tex(body)))
 
 
 class TestMetaCommentary(unittest.TestCase):

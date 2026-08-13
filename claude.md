@@ -14,6 +14,7 @@ Run it yourself at any time:
 ```
 python -m styleck path/to/paper.tex        # report
 python -m styleck --fix path/to/paper.tex  # repair what is mechanical
+python -m styleck --concordance the path/to/paper.tex  # inspect every `the`
 ```
 
 Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
@@ -142,6 +143,22 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `We arrange the deck cleanly.`
   ✓ `We sort the deck.`
 
+- **background-or-defined** (judgment) — Treat a technical phrase as either background knowledge
+  or a defined term.
+  Record field-standard vocabulary in the applicable `.styleck-terms` file. Introduce other
+  technical phrases with `\term{...}` at first substantive use, but only when the paper will
+  reuse the name. If a phrase is neither background nor worth reusing, replace it with plain
+  language or give its symbol a direct definition. No lexical checker can infer this distinction
+  reliably, so audit unfamiliar noun phrases by hand.
+
+- **background-redefinition** (warn) — Do not rederive project background vocabulary from a
+  formula.
+  A term listed in `.styleck-terms` is assumed knowledge. Introduce a notation convention if
+  needed, but omit a textbook-style local definition. This deliberately narrow check looks for
+  `the term is $f(x)=...$`; substantive identities still require judgment.
+  ✗ `The binary entropy function is $h_2(p)=-p\log p-(1-p)\log(1-p)$.`
+  ✓ `For binary entropy $h_2$, independence gives the required rate.`
+
 - **empty-adjective** (warn) — Cut jargony adjectives that do not change the meaning.
   ✗ `This novel, powerful technique is comprehensive.`
   ✓ `This technique handles every case in one pass.`
@@ -178,6 +195,15 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `A fixed convention handles actions at the right boundary.`
   ✓ `If an action extends past $x_n$, emit the remaining suffix unchanged.`
 
+- **term-background** (warn) — Do not present project background vocabulary as newly introduced
+  terminology.
+  List assumed field vocabulary in `.styleck-terms` for a project or in a source-specific
+  `paper-name.styleck-terms` file. One phrase goes on each line. An `@relative/path.tex` line
+  imports that source's `\term` entries. Background terms may appear without boldface or a local
+  definition.
+  ✗ `The \term{relative entropy} is $D(P\Vert Q)$.`
+  ✓ `Write $D(P\Vert Q)$ for relative entropy.`
+
 - **term-first-use** (warn) — Mark a technical term where it first appears, not later.
   Use one definition macro such as `\term{...}` at the first substantive occurrence. In an
   abstract, either define proof-internal vocabulary in plain language or paraphrase it. The
@@ -191,10 +217,26 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
 
   ✓ `The \term{alignment path} records the script in lattice coordinates.`
 
+- **term-single-use** (warn) — Name a technical term only when the paper reuses the name.
+  A one-off phrase usually needs a direct definition of its symbol, not a bold name. The checker
+  covers literal multiword terms and ordinary singular/plural forms; irregular inflections, one-
+  word terms, and conceptual reuse still require judgment.
+  ✗ `Define the \term{window family} $\mathcal W_m$ to be all intervals.`
+  ✓ `Let $\mathcal W_m$ be the set of all length-$m$ intervals.`
+
 - **the-display** (error) — Never write `the display` to refer to a display equation.
   Number the equation and reference it, or just say `this`.
   ✗ `Combining the display with Lemma 2 gives the bound.`
   ✓ `Combining \eqref{eq:phi} with Lemma 2 gives the bound.`
+
+- **vague-referent** (warn) — Replace abstract `the ...` phrases with an exact referent.
+  A definite article promises that the reader can identify its noun. Phrases such as `the
+  bound`, `the same expression`, and `the functional` often force the reader to search backward.
+  Cite the equation or result, write the expression, or name the specific mathematical object.
+  This is a deliberately high-recall warning; keep a phrase when its referent is genuinely
+  immediate.
+  ✗ `The same estimate proves the claim.`
+  ✓ `Applying \eqref{eq:local-TV} proves Lemma~\ref{lem:tail}.`
 
 - **voice-hedge** (warn) — Drop hedges like `it can be shown that`.
   State the claim, or point at the argument that proves it.

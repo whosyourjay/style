@@ -24,7 +24,8 @@ ALIGN_FAMILY = frozenset({
 })
 
 TRAILING_PUNCT_RE = re.compile(
-    r"([.,;:])(?=[ \t]*\r?\n?[ \t]*(?:\\\\|\\\]|\\end\{|\$\$|\Z))"
+    r"([.,;:])(?=[ \t]*(?:\\label\{[^}\r\n]*\}[ \t]*)*"
+    r"\r?\n?[ \t]*(?:\\\\|\\\]|\\end\{|\$\$|\Z))"
 )
 SENTENCE_END_RE = re.compile(r"[.!?][)\]'\"]?(?:\s|\Z)")
 STRUCTURAL_RE = re.compile(

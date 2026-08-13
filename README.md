@@ -46,6 +46,7 @@ styleck --new-since HEAD paper.tex   # only what is not yet committed
 styleck --docs                       # print the style guide
 styleck --summary                    # one line per rule
 styleck --rules eq-needs-align paper.tex
+styleck --concordance the paper.tex  # inspect every prose occurrence
 ```
 
 Exit status is 1 when an error-level rule fires, 0 otherwise. `--warn-exit`
@@ -53,6 +54,37 @@ makes warnings count too.
 
 Nothing here runs during a LaTeX build or can fail one. The checker reads
 `.tex` source and never invokes `pdflatex`.
+
+## Declare background vocabulary
+
+Put field-standard terms that need no local definition in `.styleck-terms`,
+one phrase per line. A source-specific `paper-name.styleck-terms` extends the
+project list for `paper-name.tex`. For example:
+
+```text
+capacity
+conditional entropy
+relative entropy
+renewal process
+```
+
+An `@relative/path.tex` line imports the terms explicitly marked with
+`\term{...}` in another source. An `@relative/path.styleck-terms` line imports
+another list. Imports are resolved relative to the list containing them.
+
+The checker warns when a background term is marked as newly introduced, when
+`the <background term> is $f(x)=\cdots$` rederives it from a formula, and when
+a literal multiword `\term{...}` is never reused. It cannot reliably infer
+whether every unmarked noun phrase is field-standard; the generated guide
+therefore retains that part as a judgment rule.
+
+For a high-recall lexical pass, `--concordance WORD` prints every whole-word
+occurrence outside mathematics, comments, diagrams, and verbatim material.
+Running `styleck --concordance the paper.tex` is useful after ordinary checks:
+each definite article should point to a noun the reader can identify without
+searching backward. The `vague-referent` rule automatically reports common
+abstract cases, including `the bound`, `the same expression`, and `the
+functional`.
 
 ## Extract PDF edit marks
 
