@@ -47,6 +47,24 @@ manual(
     id="jargon-the-x",
     section="Write like a human",
     summary='Do not write "the X" for jargon X the paper has not defined.',
+    detail=(
+        "Define technical vocabulary at its first substantive use. Make the "
+        "referent and quantifier explicit: if `the probabilities` means all "
+        "action probabilities, say so."
+    ),
+)
+
+manual(
+    id="one-noun-one-concept",
+    section="Write like a human",
+    summary="Give each technical concept one noun, and each noun one role.",
+    detail=(
+        "Do not alternate among near-synonyms such as `outcome`, `action`, and "
+        "`label`. If they denote different objects, define the distinction; if "
+        "not, choose one. Do not rename an ordinary probability a `hazard`, or "
+        "an inserted word a `payload`, unless the new term does mathematical "
+        "work."
+    ),
 )
 
 manual(
@@ -68,6 +86,20 @@ manual(
     summary="Alternate blocks of text and blocks of equations.",
     detail=(
         "When a stub of text falls between two displays, either say more, fold "
-        "the stub into the align as inline text, or merge the two displays."
+        "the stub into the align as inline text, or merge the two displays. If "
+        "the prose states a reusable claim, promote it to a lemma or "
+        "proposition; if the cluster introduces notation, use a definition."
+    ),
+)
+
+manual(
+    id="formalize-reusable-claims",
+    section="LaTeX layout",
+    summary="Put reusable mathematical claims in named environments.",
+    detail=(
+        "A claim that carries part of the proof, is cited later, or introduces "
+        "several related quantities belongs in a lemma, proposition, or "
+        "definition with a label. Do not leave it as an unnumbered assertion "
+        "between displays."
     ),
 )

@@ -6,7 +6,7 @@ import math
 import re
 from typing import Iterable
 
-from .document import ALGO, COMMENT, DISPLAY, TEX_SUFFIXES, Document, Span
+from .document import ALGO, COMMENT, DISPLAY, INLINE, TEX_SUFFIXES, Document, Span
 from .rule import ERROR, WARN, Violation, at_line, make, register
 from .wrap import WRAP_TARGET, first_atom
 
@@ -44,6 +44,11 @@ RELATION_RE = re.compile(
     r"|subset|supset|ll|gg|cong|propto)\b|[=<>]"
 )
 TEXT_GROUP_RE = re.compile(r"\\(?:text|mbox|textrm|textit|mathrm|operatorname)\s*\{")
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\r(?!\n)")
+BARE_MATH_COMMAND_RE = re.compile(
+    r"(?<![\\A-Za-z])(?P<name>qquad|quad|geq|leq|neq|infty|cdot|ldots|times)"
+    r"(?=$|[^a-z])"
+)
 
 
 def _body_spans(document: Document, kind: str) -> list[Span]:
@@ -123,6 +128,14 @@ def _group_end(body: str, open_brace: int) -> int:
                 return position + 1
         position += 1
     return len(body)
+
+
+def _text_group_regions(body: str) -> list[tuple[int, int]]:
+    """Ranges of prose-like groups nested inside a math span."""
+    return [
+        (match.start(), _group_end(body, match.end() - 1))
+        for match in TEXT_GROUP_RE.finditer(body)
+    ]
 
 
 def trailing_punct_offsets(document: Document) -> list[tuple[int, str]]:
@@ -233,6 +246,45 @@ def check_eq_block_size(document: Document) -> Iterable[Violation]:
                 "eq-block-size",
                 span.start,
                 f"block has {rows} rows; keep it to {MAX_ALIGN_ROWS} and explain between",
+            )
+
+
+@register(
+    id="tex-malformed-control",
+    section="LaTeX layout",
+    severity=ERROR,
+    applies_to=TEX,
+    summary="Reject control characters and TeX commands that lost their backslash.",
+    detail=(
+        "A pasted carriage return can corrupt a command, and `qquadE` is not "
+        "a substitute for `\\qquad \\E`. The math-word check is deliberately "
+        "limited to common TeX commands with very low prose ambiguity."
+    ),
+    bad="$m \\geq 1, qquadE \\log M=\\nu$",
+    good="$m \\geq 1, \\qquad \\E \\log M=\\nu$",
+)
+def check_tex_malformed_control(document: Document) -> Iterable[Violation]:
+    for match in CONTROL_CHAR_RE.finditer(document.text):
+        char = match.group(0)
+        name = "standalone carriage return" if char == "\r" else f"U+{ord(char):04X}"
+        yield make(
+            document,
+            "tex-malformed-control",
+            match.start(),
+            f"source contains {name}; remove it and restore any damaged TeX command",
+        )
+
+    for span in document.spans_of(INLINE, DISPLAY):
+        body = document.text[span.start:span.end]
+        blocked = _text_group_regions(body)
+        for match in BARE_MATH_COMMAND_RE.finditer(body):
+            if any(low <= match.start() < high for low, high in blocked):
+                continue
+            yield make(
+                document,
+                "tex-malformed-control",
+                span.start + match.start("name"),
+                f"'{match.group('name')}' in math looks like a TeX command missing '\\'",
             )
 
 

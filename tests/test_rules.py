@@ -50,6 +50,25 @@ class TestTrailingPunctuation(unittest.TestCase):
         self.assertEqual(apply_fixes("t.tex", source), PREAMBLE + "\\[\n    x = y\n\\]\n")
 
 
+class TestMalformedControl(unittest.TestCase):
+    def test_bare_math_command_is_flagged(self):
+        body = r"$m \geq 1, qquadE \log M=\nu$"
+        self.assertIn("tex-malformed-control", ids(tex(body)))
+
+    def test_escaped_math_command_passes(self):
+        body = r"$m \geq 1, \qquad \E \log M=\nu$"
+        self.assertNotIn("tex-malformed-control", ids(tex(body)))
+
+    def test_math_word_inside_text_group_passes(self):
+        self.assertNotIn("tex-malformed-control", ids(tex(r"$\text{quad}$")))
+
+    def test_command_word_in_prose_passes(self):
+        self.assertNotIn("tex-malformed-control", ids(tex("A quad has four sides.")))
+
+    def test_control_character_is_flagged(self):
+        self.assertIn("tex-malformed-control", ids(tex("bad\x0ccommand")))
+
+
 class TestNeedsAlign(unittest.TestCase):
     def test_chain_of_three_relations_is_flagged(self):
         self.assertIn("eq-needs-align", ids(tex("\\[\n  a = b = c = d\n\\]")))
@@ -153,6 +172,50 @@ class TestProse(unittest.TestCase):
     def test_preamble_is_not_prose(self):
         document = Document("t.tex", "\\title{A novel method}\n\\begin{document}\nHi.\n")
         self.assertNotIn("empty-adjective", ids(document))
+
+    def test_vague_theorem_reference_is_flagged(self):
+        self.assertIn("precise-reference", ids(tex("The theorem permits equality.")))
+
+    def test_numbered_theorem_reference_passes(self):
+        body = r"Theorem~\ref{thm:main} permits equality."
+        self.assertNotIn("precise-reference", ids(tex(body)))
+
+    def test_unspecified_convention_is_flagged(self):
+        body = "A fixed convention handles the final coordinate."
+        self.assertIn("state-conventions", ids(tex(body)))
+
+    def test_explicit_convention_passes(self):
+        body = "If the action crosses $x_n$, emit the remaining suffix unchanged."
+        self.assertNotIn("state-conventions", ids(tex(body)))
+
+
+class TestTermFirstUse(unittest.TestCase):
+    def test_earlier_multiword_term_is_flagged(self):
+        body = (
+            "The alignment path records the script.\n"
+            "The \\term{alignment path} is a lattice path."
+        )
+        self.assertIn("term-first-use", ids(tex(body)))
+
+    def test_marked_first_use_passes(self):
+        body = "The \\term{alignment path} records the script."
+        self.assertNotIn("term-first-use", ids(tex(body)))
+
+    def test_definition_title_is_not_counted_as_prior_use(self):
+        body = (
+            "\\begin{definition}[Alignment path]\n"
+            "The \\term{alignment path} records the script.\n"
+            "\\end{definition}"
+        )
+        self.assertNotIn("term-first-use", ids(tex(body)))
+
+    def test_math_occurrence_is_not_counted_as_prior_prose(self):
+        body = "$\\text{alignment path}$\nThe \\term{alignment path} records the script."
+        self.assertNotIn("term-first-use", ids(tex(body)))
+
+    def test_single_word_terms_remain_judgment_calls(self):
+        body = "An anchor comes first. We mark an \\term{anchor} later."
+        self.assertNotIn("term-first-use", ids(tex(body)))
 
 
 class TestMetaCommentary(unittest.TestCase):

@@ -21,6 +21,14 @@ ADVERB_EXCEPTIONS = frozenset({
 
 ADVERB_TAIL_RE = re.compile(r"\b([A-Za-z]+ly)\s*\.(?=\s|\Z)")
 DISPLAY_WORD_RE = re.compile(r"\bthe\s+(?:above\s+|following\s+)?display(?:ed)?\b", re.I)
+VAGUE_REFERENCE_RE = re.compile(
+    r"\bthe\s+(?:theorem|lemma|proposition|corollary)\b", re.I
+)
+UNSPECIFIED_CONVENTION_RE = re.compile(
+    r"\b(?:a|an|the|some)\s+(?:fixed|usual|standard|chosen)\s+convention\b", re.I
+)
+TERM_RE = re.compile(r"\\term\s*\{([^{}]+)\}")
+DEFINITION_TITLE_RE = re.compile(r"\\begin\{definition\}\s*\[[^\]]*\]")
 NAMING_RE = re.compile(
     r"\b(?:is|are|was|were)\s+(?:called|denoted|known\s+as|said\s+to\s+be)\b", re.I
 )
@@ -72,6 +80,110 @@ def check_the_display(document: Document) -> Iterable[Violation]:
         document, "the-display", DISPLAY_WORD_RE,
         'nobody says "{}"; number the equation or say "this"',
     )
+
+
+@register(
+    id="precise-reference",
+    section="Write like a human",
+    severity=WARN,
+    applies_to=TEX_ONLY,
+    summary="Replace vague theorem references with a numbered reference.",
+    detail=(
+        "Write `Theorem~\\ref{...}` or name the exact result. A nearby result "
+        "may feel obvious while writing but becomes ambiguous after revision."
+    ),
+    bad="The theorem also permits zero probabilities.",
+    good="Theorem~\\ref{thm:main} also permits zero probabilities.",
+)
+def check_precise_reference(document: Document) -> Iterable[Violation]:
+    return _scan_prose(
+        document,
+        "precise-reference",
+        VAGUE_REFERENCE_RE,
+        "vague reference '{}'; cite or name the exact result",
+    )
+
+
+@register(
+    id="state-conventions",
+    section="Write like a human",
+    severity=WARN,
+    applies_to=TEX_ONLY,
+    summary="State boundary and degeneracy conventions in concrete terms.",
+    detail=(
+        "Do not hide behavior behind a `fixed`, `usual`, or `standard` "
+        "convention. Say what happens and, when relevant, why another choice "
+        "would not change the result."
+    ),
+    bad="A fixed convention handles actions at the right boundary.",
+    good="If an action extends past $x_n$, emit the remaining suffix unchanged.",
+)
+def check_state_conventions(document: Document) -> Iterable[Violation]:
+    return _scan_prose(
+        document,
+        "state-conventions",
+        UNSPECIFIED_CONVENTION_RE,
+        "'{}' hides the actual rule; state what happens",
+    )
+
+
+def _term_pattern(term: str) -> re.Pattern:
+    parts = term.split()
+    body = r"\s+".join(re.escape(part) for part in parts)
+    return re.compile(rf"(?<![A-Za-z0-9]){body}(?![A-Za-z0-9])", re.I)
+
+
+def _inside(offset: int, regions: list[tuple[int, int]]) -> bool:
+    return any(start <= offset < end for start, end in regions)
+
+
+@register(
+    id="term-first-use",
+    section="Write like a human",
+    severity=WARN,
+    applies_to=TEX_ONLY,
+    summary="Mark a technical term where it first appears, not later.",
+    detail=(
+        "Use one definition macro such as `\\term{...}` at the first "
+        "substantive occurrence. In an abstract, either define proof-internal "
+        "vocabulary in plain language or paraphrase it. The checker covers "
+        "literal multiword terms; variants and one-word terms still require "
+        "judgment."
+    ),
+    bad=(
+        "The alignment path records the script.\n"
+        "Later, the \\term{alignment path} is defined formally."
+    ),
+    good="The \\term{alignment path} records the script in lattice coordinates.",
+)
+def check_term_first_use(document: Document) -> Iterable[Violation]:
+    prose = document.prose_mask()
+    title_regions = [
+        (match.start(), match.end())
+        for match in DEFINITION_TITLE_RE.finditer(document.text)
+    ]
+    seen: set[str] = set()
+    for marked in TERM_RE.finditer(document.text):
+        if not document.in_body(marked.start()):
+            continue
+        term = " ".join(marked.group(1).split())
+        words = re.findall(r"[A-Za-z][A-Za-z0-9-]*", term)
+        if len(words) < 2 or len("".join(words)) != len(term.replace(" ", "")):
+            continue
+        key = term.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        for earlier in _term_pattern(term).finditer(prose, 0, marked.start()):
+            if _inside(earlier.start(), title_regions):
+                continue
+            yield make(
+                document,
+                "term-first-use",
+                earlier.start(),
+                f"'{earlier.group(0)}' appears before its first \\term{{...}} marking",
+            )
+            break
 
 
 @register(

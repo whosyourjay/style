@@ -71,9 +71,24 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
 
 ## LaTeX layout
 
+- **formalize-reusable-claims** (judgment) — Put reusable mathematical claims in named
+  environments.
+  A claim that carries part of the proof, is cited later, or introduces several related
+  quantities belongs in a lemma, proposition, or definition with a label. Do not leave it as an
+  unnumbered assertion between displays.
+
 - **prose-between-blocks** (judgment) — Alternate blocks of text and blocks of equations.
   When a stub of text falls between two displays, either say more, fold the stub into the align
-  as inline text, or merge the two displays.
+  as inline text, or merge the two displays. If the prose states a reusable claim, promote it to
+  a lemma or proposition; if the cluster introduces notation, use a definition.
+
+- **tex-malformed-control** (error) — Reject control characters and TeX commands that lost their
+  backslash.
+  A pasted carriage return can corrupt a command, and `qquadE` is not a substitute for `\qquad
+  \E`. The math-word check is deliberately limited to common TeX commands with very low prose
+  ambiguity.
+  ✗ `$m \geq 1, qquadE \log M=\nu$`
+  ✓ `$m \geq 1, \qquad \E \log M=\nu$`
 
 - **tex-short-lines** (warn, auto-fix) — Do not break prose into short lines; wrap near 80
   characters.
@@ -137,10 +152,44 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✓ `The potential drops because each square shrinks.`
 
 - **jargon-the-x** (judgment) — Do not write "the X" for jargon X the paper has not defined.
+  Define technical vocabulary at its first substantive use. Make the referent and quantifier
+  explicit: if `the probabilities` means all action probabilities, say so.
 
 - **meta-commentary** (error) — Never record edit history or your reasoning in the paper.
   Explain a change in chat. The file holds the current state only.
   ✗ `% changed from a linear bound as requested`
+
+- **one-noun-one-concept** (judgment) — Give each technical concept one noun, and each noun one
+  role.
+  Do not alternate among near-synonyms such as `outcome`, `action`, and `label`. If they denote
+  different objects, define the distinction; if not, choose one. Do not rename an ordinary
+  probability a `hazard`, or an inserted word a `payload`, unless the new term does mathematical
+  work.
+
+- **precise-reference** (warn) — Replace vague theorem references with a numbered reference.
+  Write `Theorem~\ref{...}` or name the exact result. A nearby result may feel obvious while
+  writing but becomes ambiguous after revision.
+  ✗ `The theorem also permits zero probabilities.`
+  ✓ `Theorem~\ref{thm:main} also permits zero probabilities.`
+
+- **state-conventions** (warn) — State boundary and degeneracy conventions in concrete terms.
+  Do not hide behavior behind a `fixed`, `usual`, or `standard` convention. Say what happens
+  and, when relevant, why another choice would not change the result.
+  ✗ `A fixed convention handles actions at the right boundary.`
+  ✓ `If an action extends past $x_n$, emit the remaining suffix unchanged.`
+
+- **term-first-use** (warn) — Mark a technical term where it first appears, not later.
+  Use one definition macro such as `\term{...}` at the first substantive occurrence. In an
+  abstract, either define proof-internal vocabulary in plain language or paraphrase it. The
+  checker covers literal multiword terms; variants and one-word terms still require judgment.
+  ✗
+
+  ```latex
+  The alignment path records the script.
+  Later, the \term{alignment path} is defined formally.
+  ```
+
+  ✓ `The \term{alignment path} records the script in lattice coordinates.`
 
 - **the-display** (error) — Never write `the display` to refer to a display equation.
   Number the equation and reference it, or just say `this`.
