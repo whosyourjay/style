@@ -39,10 +39,10 @@ VAGUE_REFERENT_RE = re.compile(
     re.I,
 )
 DIRECT_QUALIFIER_RE = re.compile(
-    r"^[ \t]*(?:(?:in|of|from)\s+)?"
-    r"(?:(?:Theorem|Lemma|Proposition|Corollary|Definition|Equation|Section)"
-    r"\s*)?~?\\(?:eqref|ref)\{",
-    re.I,
+    r"^\s*(?:"
+    r"\$"                                     # the expression, written out
+    r"|(?:[A-Za-z]+[\s~]+){0,3}\\(?:eqref|ref)\{"  # a citation, a few words along
+    r")"
 )
 UNSPECIFIED_CONVENTION_RE = re.compile(
     r"\b(?:a|an|the|some)\s+(?:fixed|usual|standard|chosen)\s+convention\b", re.I
@@ -122,7 +122,7 @@ def check_the_display(document: Document) -> Iterable[Violation]:
 def check_precise_reference(document: Document) -> Iterable[Violation]:
     prose = document.prose_mask()
     for match in VAGUE_REFERENCE_RE.finditer(prose):
-        if DIRECT_QUALIFIER_RE.match(prose[match.end():match.end() + 100]):
+        if _referent_follows(document, match.end()):
             continue
         yield make(
             document,
@@ -151,8 +151,12 @@ def check_precise_reference(document: Document) -> Iterable[Violation]:
 )
 def check_vague_referent(document: Document) -> Iterable[Violation]:
     prose = document.prose_mask()
+    background = background_terms(document.path)
     for match in VAGUE_REFERENT_RE.finditer(prose):
-        if DIRECT_QUALIFIER_RE.match(prose[match.end():match.end() + 100]):
+        if _referent_follows(document, match.end()):
+            continue
+        _, _, noun = match.group(0).partition(" ")
+        if normalize_term(noun) in background:
             continue
         yield make(
             document,
@@ -212,6 +216,15 @@ def _term_variants(term: str) -> set[str]:
         counterpart = last + "s"
     variants.add(" ".join((*words[:-1], counterpart)))
     return variants
+
+
+def _referent_follows(document: Document, offset: int) -> bool:
+    """Whether the source at ``offset`` supplies the referent it was promised.
+
+    Reads the source rather than the prose mask, so an expression written out
+    in inline math counts alongside a numbered citation.
+    """
+    return bool(DIRECT_QUALIFIER_RE.match(document.text[offset:offset + 100]))
 
 
 def _inside(offset: int, regions: list[tuple[int, int]]) -> bool:
