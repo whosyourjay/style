@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .config import config_chain
 
 TERM_RE = re.compile(r"\\term\s*\{([^{}]+)\}")
 
@@ -26,30 +27,11 @@ def background_terms(source_path: str) -> frozenset[str]:
     ``.styleck-terms``.  Lines beginning with ``@`` include another term list;
     a TeX include contributes the terms it explicitly marks with ``\term``.
     """
-    source = Path(source_path).resolve()
-    configs: list[Path] = []
-    project = _nearest_project_config(source.parent)
-    if project is not None:
-        configs.append(project)
-    specific = source.with_suffix(".styleck-terms")
-    if specific.is_file() and specific not in configs:
-        configs.append(specific)
-
     found: set[str] = set()
     seen: set[Path] = set()
-    for config in configs:
+    for config in config_chain(source_path, ".styleck-terms"):
         found.update(_read_term_list(config, seen))
     return frozenset(found)
-
-
-def _nearest_project_config(start: Path) -> Path | None:
-    for directory in (start, *start.parents):
-        candidate = directory / ".styleck-terms"
-        if candidate.is_file():
-            return candidate
-        if (directory / ".git").exists():
-            break
-    return None
 
 
 def _read_term_list(path: Path, seen: set[Path]) -> set[str]:

@@ -40,6 +40,9 @@ SKIP_LINE_RE = re.compile(
     r"|&|\||\\\\)"
 )
 NESTED_ENV_RE = re.compile(r"\\begin\{([A-Za-z@*]+)\}")
+ROW_BREAK_RE = re.compile(r"\\\\")
+TAB_RE = re.compile(r"(?<!\\)&")
+COMMA_RE = re.compile(r",")
 RELATION_RE = re.compile(
     r"\\(?:leq|geq|le|ge|neq|ne|equiv|approx|simeq|sim|subseteq|supseteq"
     r"|subset|supset|ll|gg|cong|propto)\b|[=<>]"
@@ -98,11 +101,14 @@ def _depth_zero_positions(body: str, pattern: re.Pattern) -> list[int]:
 
 
 def _brace_depth(body: str, index: int) -> int:
+    """Group depth at `index`, counting a literal `\\{` set brace as a group."""
     depth = 0
     position = 0
     while position < index:
         char = body[position]
         if char == "\\":
+            escaped = body[position + 1:position + 2]
+            depth += (escaped == "{") - (escaped == "}")
             position += 2
             continue
         if char == "{":
@@ -193,38 +199,68 @@ def check_eq_trailing_punct(document: Document) -> Iterable[Violation]:
         )
 
 
+def _split(body: str, start: int, end: int, pattern: re.Pattern,
+           width: int) -> list[tuple[int, int]]:
+    """`[start, end)` cut at every depth-zero `pattern` match, as offsets in `body`."""
+    pieces = []
+    cursor = start
+    for offset in _depth_zero_positions(body[start:end], pattern):
+        pieces.append((cursor, start + offset))
+        cursor = start + offset + width
+    pieces.append((cursor, end))
+    return pieces
+
+
+def _chains(body: str) -> Iterable[tuple[int, int, bool]]:
+    """Per alignment cell holding two or more relations: where, how many, listed.
+
+    A display without a row break is one row, and one without an alignment tab
+    is one cell, so every display is measured the same way.
+    """
+    for row_start, row_end in _split(body, 0, len(body), ROW_BREAK_RE, 2):
+        for start, end in _split(body, row_start, row_end, TAB_RE, 1):
+            cell = body[start:end]
+            positions = _depth_zero_positions(cell, RELATION_RE)
+            if len(positions) < 2:
+                continue
+            middle = cell[positions[0]:positions[-1]]
+            listed = bool(_depth_zero_positions(middle, COMMA_RE))
+            yield start + positions[1], len(positions), listed
+
+
 @register(
     id="eq-needs-align",
     section="Equations",
     severity=WARN,
     applies_to=TEX,
-    summary="Split a display with two or more relations into an {align}.",
+    summary="Give each relation a row of its own.",
     detail=(
-        "A second relation may stay when the far side is small. Give each "
-        "relation its own row so a reader can follow the derivation."
+        "One relation per display, or per row of an align, however short the "
+        "far side is. Record a deliberate exception in a `.styleck-allow` "
+        "file next to the source."
     ),
-    bad="\\[\n  f(x) = g(x) = h(x)\n\\]",
+    bad="\\begin{align}\n  f(x) &= g(x) = h(x)\n\\end{align}",
     good="\\begin{align}\n  f(x) &= g(x) \\\\\n       &= h(x)\n\\end{align}",
 )
 def check_eq_needs_align(document: Document) -> Iterable[Violation]:
     for span in _body_spans(document, DISPLAY):
-        if span.env in ALIGN_FAMILY:
-            continue
         body = document.text[span.start:span.end]
-        positions = _depth_zero_positions(body, RELATION_RE)
-        if len(positions) < 2:
-            continue
-        tail = re.sub(r"\\(?:\]|end\{[^}]*\})|\$\$", "", body[positions[-1] + 1:])
-        if len(positions) == 2 and len(tail.split()) and len("".join(tail.split())) <= 10:
-            continue
-        middle = body[positions[0]:positions[-1]]
-        listed = bool(_depth_zero_positions(middle, re.compile(r",")))
-        message = (
-            f"display holds {len(positions)} separate equations; align them on the relation"
-            if listed
-            else f"display chains {len(positions)} relations; split it into an align"
-        )
-        yield make(document, "eq-needs-align", span.start + positions[1], message)
+        rowed = span.env in ALIGN_FAMILY
+        for offset, count, listed in _chains(body):
+            yield make(
+                document,
+                "eq-needs-align",
+                span.start + offset,
+                _align_message(count, listed, rowed),
+            )
+
+
+def _align_message(count: int, listed: bool, rowed: bool) -> str:
+    subject = "row" if rowed else "display"
+    if listed:
+        return f"{subject} holds {count} separate equations; align them on the relation"
+    remedy = "give each its own row" if rowed else "split it into an align"
+    return f"{subject} chains {count} relations; {remedy}"
 
 
 @register(
@@ -240,7 +276,7 @@ def check_eq_block_size(document: Document) -> Iterable[Violation]:
         if span.env not in ALIGN_FAMILY:
             continue
         body = document.text[span.start:span.end]
-        rows = len(_depth_zero_positions(body, re.compile(r"\\\\"))) + 1
+        rows = len(_split(body, 0, len(body), ROW_BREAK_RE, 2))
         if rows > MAX_ALIGN_ROWS:
             yield make(
                 document,

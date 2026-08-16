@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
+from .allow import filter_allowed
 from .document import Document
 
 ERROR = "error"
@@ -104,7 +105,7 @@ def all_rules() -> list[Rule]:
 
 
 def check_document(document: Document, only: frozenset[str] | None = None) -> list[Violation]:
-    """Run every applicable rule over one document."""
+    """Run every applicable rule over one document, less its written exceptions."""
     found: list[Violation] = []
     for rule in all_rules():
         if only is not None and rule.id not in only:
@@ -112,5 +113,6 @@ def check_document(document: Document, only: frozenset[str] | None = None) -> li
         if not rule.matches(document):
             continue
         found.extend(rule.check(document))
+    found = filter_allowed(document, found)
     found.sort(key=lambda v: (v.line, v.column, v.rule_id))
     return found

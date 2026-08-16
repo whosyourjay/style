@@ -80,6 +80,18 @@ An `@relative/path.styleck-terms` line imports another vocabulary list; an
 `@relative/path.tex` line imports terms explicitly marked with `\term{...}` in
 that source.
 
+### Excuse a finding
+
+No rule has a built-in escape hatch. Write the exception down in
+`.styleck-allow`, or in a source-specific `paper-name.styleck-allow`, one rule
+id per line. Text after a colon anchors the exception to lines containing it,
+so it lapses when that line is rewritten.
+
+```text
+# Fano in the form its readers know
+eq-needs-align: I(X^n;Y)+1
+```
+
 ## Optional automation
 
 The repository includes post-edit hooks for Codex and Claude Code and a Git

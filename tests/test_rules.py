@@ -86,15 +86,19 @@ class TestNeedsAlign(unittest.TestCase):
     def test_single_relation_passes(self):
         self.assertNotIn("eq-needs-align", ids(tex("\\[\n  a = b + c\n\\]")))
 
-    def test_small_second_side_is_allowed(self):
-        self.assertNotIn("eq-needs-align", ids(tex("\\[\n  \\sum_i x_i = y_i + z_i = 0\n\\]")))
+    def test_small_second_side_is_still_flagged(self):
+        self.assertIn("eq-needs-align", ids(tex("\\[\n  \\sum_i x_i = y_i + z_i = 0\n\\]")))
 
     def test_relation_inside_subscript_does_not_count(self):
         self.assertNotIn("eq-needs-align", ids(tex("\\[\n  \\sum_{i=1}^n x_i = y\n\\]")))
 
-    def test_align_environment_is_exempt(self):
+    def test_one_relation_per_align_row_passes(self):
         body = "\\begin{align}\n  a &= b \\\\\n  &= c\n\\end{align}"
         self.assertNotIn("eq-needs-align", ids(tex(body)))
+
+    def test_chain_inside_an_align_row_is_flagged(self):
+        body = "\\begin{align}\n  a &= b = c \\\\\n  &= d\n\\end{align}"
+        self.assertIn("eq-needs-align", ids(tex(body)))
 
     def test_relations_inside_matrix_do_not_count(self):
         body = "\\[\n  A = \\begin{bmatrix} x \\le y \\\\ z \\ge w \\end{bmatrix}\n\\]"
