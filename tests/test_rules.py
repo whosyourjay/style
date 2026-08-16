@@ -148,6 +148,14 @@ class TestShortLines(unittest.TestCase):
         )
         self.assertNotIn("tex-short-lines", ids(tex(body)))
 
+    def test_table_formatting_commands_are_exempt(self):
+        body = (
+            "\\begin{table}[t]\n\\centering\n"
+            "\\renewcommand{\\arraystretch}{1.2}\n\\small\n"
+            "\\begin{tabular}{c|c}\n$a$ & $b$\n\\end{tabular}\n\\end{table}"
+        )
+        self.assertNotIn("tex-short-lines", ids(tex(body)))
+
     def test_fix_rewraps_and_keeps_the_words(self):
         body = "The bound follows\nfrom convexity of\nthe square function\nand nothing else."
         fixed = apply_fixes("t.tex", PREAMBLE + body + "\n")
@@ -219,6 +227,20 @@ class TestProse(unittest.TestCase):
     def test_equation_qualified_estimate_passes(self):
         body = r"The estimate \eqref{eq:local} bounds the error."
         self.assertNotIn("vague-referent", ids(tex(body)))
+
+    def test_math_qualifier_before_the_noun_passes(self):
+        body = r"We drop the $p\log p$ term shared by every label."
+        self.assertNotIn("vague-referent", ids(tex(body)))
+
+    def test_wrapped_background_phrase_passes(self):
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / "paper.styleck-terms").write_text("union bound\n")
+            body = "Taking the\nunion bound over the shifts finishes it."
+            document = Document(
+                str(root / "paper.tex"), PREAMBLE + body + "\n\\end{document}\n"
+            )
+            self.assertNotIn("vague-referent", ids(document))
 
     def test_unspecified_convention_is_flagged(self):
         body = "A fixed convention handles the final coordinate."

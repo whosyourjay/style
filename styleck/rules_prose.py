@@ -44,6 +44,7 @@ DIRECT_QUALIFIER_RE = re.compile(
     r"|(?:[A-Za-z]+[\s~]+){0,3}\\(?:eqref|ref)\{"  # a citation, a few words along
     r")"
 )
+INLINE_QUALIFIER_RE = re.compile(r"\$[^$]+\$|\\(?:eqref|ref)\{")
 UNSPECIFIED_CONVENTION_RE = re.compile(
     r"\b(?:a|an|the|some)\s+(?:fixed|usual|standard|chosen)\s+convention\b", re.I
 )
@@ -155,7 +156,9 @@ def check_vague_referent(document: Document) -> Iterable[Violation]:
     for match in VAGUE_REFERENT_RE.finditer(prose):
         if _referent_follows(document, match.end()):
             continue
-        _, _, noun = match.group(0).partition(" ")
+        if _referent_inside(document, match.start(), match.end()):
+            continue
+        noun = match.group(0).split(maxsplit=1)[1]
         if normalize_term(noun) in background:
             continue
         yield make(
@@ -225,6 +228,15 @@ def _referent_follows(document: Document, offset: int) -> bool:
     in inline math counts alongside a numbered citation.
     """
     return bool(DIRECT_QUALIFIER_RE.match(document.text[offset:offset + 100]))
+
+
+def _referent_inside(document: Document, start: int, end: int) -> bool:
+    r"""Whether the phrase carries its own qualifier, as in ``the $p\log p$ term``.
+
+    The prose mask blanks inline math, so a qualifier standing before the noun
+    is invisible to the pattern that found the phrase.
+    """
+    return bool(INLINE_QUALIFIER_RE.search(document.text[start:end]))
 
 
 def _inside(offset: int, regions: list[tuple[int, int]]) -> bool:

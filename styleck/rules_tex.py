@@ -39,6 +39,7 @@ SKIP_LINE_RE = re.compile(
     r"|thebibliography|input|include)\b"
     r"|&|\||\\\\)"
 )
+MACRO_CALL_RE = re.compile(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?(?:\{[^{}\s]*\})*")
 NESTED_ENV_RE = re.compile(r"\\begin\{([A-Za-z@*]+)\}")
 ROW_BREAK_RE = re.compile(r"\\\\")
 TAB_RE = re.compile(r"(?<!\\)&")
@@ -390,8 +391,20 @@ def _is_wrappable_prose(document: Document, kinds: list[set[str]], index: int) -
     line = document.lines[index]
     if not line.strip() or kinds[index] != {"prose"}:
         return False
+    if SKIP_LINE_RE.match(line) or _is_markup_only(line):
+        return False
     start, _ = document.line_span(index + 1)
-    return document.in_body(start) and not SKIP_LINE_RE.match(line)
+    return document.in_body(start)
+
+
+def _is_markup_only(line: str) -> bool:
+    r"""True for a line of bare formatting commands such as ``\centering``.
+
+    Commands are stripped along with their single-word arguments, so
+    ``\emph{two words}`` still counts as prose while ``\small`` does not.
+    """
+    residue = MACRO_CALL_RE.sub(" ", line)
+    return not re.search(r"[A-Za-z]{2,}", residue)
 
 
 def _report_short_run(document: Document, run: list[int]) -> Iterable[Violation]:
