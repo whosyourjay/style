@@ -124,6 +124,13 @@ class TestTextGap(unittest.TestCase):
         body = "\\[ a \\]\n\\end{proof}\n\\begin{proof}\n\\[ b \\]"
         self.assertNotIn("tex-text-gap", ids(tex(body)))
 
+    def test_report_lands_on_the_arriving_display(self):
+        """Its label is what a .styleck-allow anchor has to grab."""
+        document = tex("\\[ a \\]\nFor example\n\\begin{equation}\\label{eq:b}\n b\n\\end{equation}")
+        found = [v for v in check_document(document) if v.rule_id == "tex-text-gap"]
+        labelled = document.line_of(document.text.index("\\label{eq:b}"))
+        self.assertEqual([v.line for v in found], [labelled])
+
 
 class TestShortLines(unittest.TestCase):
     def test_run_of_stubby_lines_is_flagged(self):

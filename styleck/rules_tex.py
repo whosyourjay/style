@@ -356,7 +356,7 @@ def check_tex_text_gap(document: Document) -> Iterable[Violation]:
         yield at_line(
             document,
             "tex-text-gap",
-            document.line_of(first.end),
+            document.line_of(second.start),
             f"only ~{estimate} line(s) of text between displays; write at least 3",
         )
 
