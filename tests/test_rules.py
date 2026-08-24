@@ -275,6 +275,13 @@ class TestTermFirstUse(unittest.TestCase):
         body = "$\\text{alignment path}$\nThe \\term{alignment path} records the script."
         self.assertNotIn("term-first-use", ids(tex(body)))
 
+    def test_earlier_plural_use_is_flagged(self):
+        body = (
+            "Collect the alignment paths first.\n"
+            "A \\term{alignment path} records the script."
+        )
+        self.assertIn("term-first-use", ids(tex(body)))
+
     def test_single_word_terms_remain_judgment_calls(self):
         body = "An anchor comes first. We mark an \\term{anchor} later."
         self.assertNotIn("term-first-use", ids(tex(body)))
@@ -342,6 +349,70 @@ class TestTermVocabulary(unittest.TestCase):
             r"\end{definition}"
         )
         self.assertIn("term-single-use", ids(tex(body)))
+
+
+class TestVoicePassive(unittest.TestCase):
+    def test_passive_is_flagged(self):
+        body = "A zero-path residual is accepted exactly when it is empty."
+        self.assertIn("voice-passive", ids(tex(body)))
+
+    def test_irregular_participle_is_flagged(self):
+        self.assertIn("voice-passive", ids(tex("The linkage was chosen for us.")))
+
+    def test_predicate_adjective_passes(self):
+        self.assertNotIn("voice-passive", ids(tex("The graph is connected.")))
+
+    def test_predicate_adjective_with_an_agent_is_flagged(self):
+        body = "The parts are connected by the algorithm."
+        self.assertIn("voice-passive", ids(tex(body)))
+
+    def test_non_participle_passes(self):
+        self.assertNotIn("voice-passive", ids(tex("The bound is indeed tight.")))
+
+    def test_active_voice_passes(self):
+        self.assertNotIn("voice-passive", ids(tex("The search accepts the residual.")))
+
+
+class TestTermUndeclared(unittest.TestCase):
+    def test_repeated_undeclared_word_is_flagged(self):
+        body = ("An attachment meets it. A second attachment follows. "
+                "A third attachment appears. A fourth attachment closes.")
+        self.assertIn("term-undeclared", ids(tex(body)))
+
+    def test_marked_word_passes(self):
+        body = ("An \\term{attachment} meets it. A second attachment follows. "
+                "A third attachment appears. A fourth attachment closes.")
+        self.assertNotIn("term-undeclared", ids(tex(body)))
+
+    def test_three_uses_pass(self):
+        body = "An attachment meets it. A second attachment follows. A third attachment."
+        self.assertNotIn("term-undeclared", ids(tex(body)))
+
+    def test_ordinary_english_passes(self):
+        body = "The result holds. The result is short. The result again. The result."
+        self.assertNotIn("term-undeclared", ids(tex(body)))
+
+    def test_label_words_are_not_prose(self):
+        body = ("See Lemma~\\ref{lem:one} and Lemma~\\ref{lem:two} and "
+                "Lemma~\\ref{lem:three} and Lemma~\\ref{lem:four}.")
+        self.assertNotIn("term-undeclared", ids(tex(body)))
+
+
+class TestTermHeadCollision(unittest.TestCase):
+    def test_rival_modifier_on_a_coined_head_is_flagged(self):
+        body = ("A \\term{terminal occurrence} is a slot.\n"
+                "Collect the boundary occurrences of each component.")
+        self.assertIn("term-head-collision", ids(tex(body)))
+
+    def test_one_modifier_passes(self):
+        body = ("A \\term{terminal occurrence} is a slot.\n"
+                "Collect the terminal occurrences of each component.")
+        self.assertNotIn("term-head-collision", ids(tex(body)))
+
+    def test_ordinary_adjective_is_not_a_rival_name(self):
+        body = ("A \\term{terminal occurrence} is a slot.\n"
+                "Every single occurrence names a vertex.")
+        self.assertNotIn("term-head-collision", ids(tex(body)))
 
 
 class TestMetaCommentary(unittest.TestCase):

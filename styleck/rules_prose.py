@@ -7,7 +7,8 @@ from typing import Iterable
 
 from .document import COMMENT, TEX_SUFFIXES, Document
 from .rule import ERROR, WARN, Violation, make, register
-from .terms import TERM_RE, background_terms, normalize_term
+from .common_words import COMMON_WORDS, IRREGULAR_PLURALS
+from .terms import TERM_RE, background_terms, introduced_terms, normalize_term
 
 PROSE_SUFFIXES = (".md", ".tex", ".txt")
 TEX_ONLY = tuple(sorted(TEX_SUFFIXES))
@@ -49,6 +50,50 @@ UNSPECIFIED_CONVENTION_RE = re.compile(
     r"\b(?:a|an|the|some)\s+(?:fixed|usual|standard|chosen)\s+convention\b", re.I
 )
 DEFINITION_TITLE_RE = re.compile(r"\\begin\{definition\}\s*\[[^\]]*\]")
+
+# Participles which ordinarily serve as predicate adjectives in mathematical
+# prose.  They count as passive only when an agent follows.
+ADJECTIVAL_PARTICIPLES = frozenset({
+    "based", "bounded", "closed", "complicated", "connected", "constructive",
+    "contained", "detailed", "directed", "disconnected", "distributed",
+    "finished", "fixed", "focused", "interested", "involved", "isolated",
+    "labeled", "labelled", "limited", "located", "ordered", "organized",
+    "oriented", "related", "restricted", "rooted", "satisfied", "sorted",
+    "unbounded", "unconnected", "undefined", "weighted",
+})
+# Words which end in -ed without being participles at all.
+NON_PARTICIPLES = frozenset({
+    "agreed", "embed", "exceed", "feed", "indeed", "need", "proceed", "seed",
+    "speed", "succeed",
+})
+IRREGULAR_PARTICIPLES = (
+    "born|bound|built|chosen|cut|dealt|done|drawn|driven|fed|felt|found|given|"
+    "gone|held|kept|known|laid|led|left|lost|made|meant|met|paid|put|read|run|"
+    "seen|sent|set|shown|shut|split|spread|taken|taught|thought|told|"
+    "understood|written"
+)
+PASSIVE_RE = re.compile(
+    r"\b(?:is|are|was|were|be|been|being)\s+"
+    r"(?:(?:also|already|never|not|now|only|then|therefore|thus|always)\s+)?"
+    rf"(?:[A-Za-z]+ed|{IRREGULAR_PARTICIPLES})(?![A-Za-z])",
+    re.I,
+)
+AGENT_RE = re.compile(r"\s+by(?![A-Za-z])")
+# A word may carry single hyphens, but `block--cut` is two words.
+WORD_RE = re.compile(r"[A-Za-z](?:[A-Za-z]|-(?=[A-Za-z])){2,}")
+# Commands and their braced arguments: `\\ref{lem:x}` is not prose.
+COMMAND_RE = re.compile(r"\\[A-Za-z@]+\*?(?:\s*\{[^{}]*\})?")
+# Determiners and connectives never count as the modifier of a term.
+MODIFIER_STOP = frozenset({
+    "a", "an", "the", "this", "that", "these", "those", "its", "their", "our",
+    "his", "her", "one", "two", "three", "four", "each", "every", "some",
+    "any", "no", "other", "same", "such", "first", "second", "third", "last",
+    "and", "or", "of", "in", "at", "by", "for", "with", "to", "from", "as",
+    "than", "when", "where", "which", "is", "are", "be", "on", "into", "onto",
+    "both", "many", "few", "more", "most", "least", "only", "all",
+})
+UNDECLARED_MIN_USES = 4
+
 NAMING_RE = re.compile(
     r"\b(?:is|are|was|were)\s+(?:called|denoted|known\s+as|said\s+to\s+be)\b", re.I
 )
@@ -280,16 +325,14 @@ def check_term_first_use(document: Document) -> Iterable[Violation]:
         if key in seen:
             continue
         seen.add(key)
-        for earlier in _term_pattern(term).finditer(prose, 0, marked.start()):
-            if _inside(earlier.start(), title_regions):
-                continue
+        earlier = _first_mention(prose, term, marked.start(), title_regions)
+        if earlier is not None:
             yield make(
                 document,
                 "term-first-use",
                 earlier.start(),
                 f"'{earlier.group(0)}' appears before its first \\term{{...}} marking",
             )
-            break
 
 
 @register(
@@ -526,3 +569,193 @@ def _comments(document: Document) -> list[tuple[int, str]]:
     """LaTeX comment regions as (offset, text) pairs."""
     spans = [s for s in document.spans if s.kind == COMMENT]
     return [(s.start, document.text[s.start:s.end]) for s in spans]
+
+
+def _first_mention(prose: str, term: str, limit: int,
+                   title_regions: list[tuple[int, int]]):
+    """Return the earliest mention of `term` or an inflection before `limit`."""
+    earliest = None
+    for variant in _term_variants(term):
+        for match in _term_pattern(variant).finditer(prose, 0, limit):
+            if _inside(match.start(), title_regions):
+                continue
+            if earliest is None or match.start() < earliest.start():
+                earliest = match
+            break
+    return earliest
+
+
+def _word_key(word: str) -> str:
+    """Fold a word onto one key shared by its singular and plural forms."""
+    lower = word.casefold()
+    if lower in COMMON_WORDS:
+        return lower
+    if lower in IRREGULAR_PLURALS:
+        return IRREGULAR_PLURALS[lower]
+    return min((variant.casefold() for variant in _term_variants(lower)), key=len)
+
+
+def _base_forms(word: str) -> Iterable[str]:
+    """Yield the word with its plain -s, -ing, and -ed endings folded back."""
+    yield word
+    for suffix, restores in (("s", ("",)), ("ing", ("", "e")), ("ed", ("", "e"))):
+        if word.endswith(suffix) and len(word) > len(suffix) + 2:
+            stem = word[: -len(suffix)]
+            for restore in restores:
+                yield stem + restore
+            if len(stem) > 2 and stem[-1] == stem[-2]:
+                yield stem[:-1]
+
+
+def _is_common(word: str) -> bool:
+    if any(form in COMMON_WORDS for form in _base_forms(word)):
+        return True
+    parts = word.split("-")
+    return len(parts) > 1 and all(_is_common(part) for part in parts if part)
+
+
+def _without_commands(prose: str) -> str:
+    """Blank every TeX command and its argument, keeping all offsets."""
+    text = list(prose)
+    for match in COMMAND_RE.finditer(prose):
+        text[match.start():match.end()] = " " * (match.end() - match.start())
+    return "".join(text)
+
+
+def _declared_words(document: Document) -> set[str]:
+    """Every word covered by a marked term or by the project vocabulary."""
+    vocabulary = set(introduced_terms(document.text))
+    vocabulary.update(background_terms(document.path))
+    return {
+        _word_key(word)
+        for term in vocabulary
+        for word in WORD_RE.findall(term)
+    }
+
+
+@register(
+    id="voice-passive",
+    section="Write like a human",
+    severity=WARN,
+    applies_to=PROSE_SUFFIXES,
+    summary="Name the actor instead of letting a passive verb hide it.",
+    detail=(
+        "A be-verb with a past participle drops the actor, and mathematical "
+        "prose almost always has one to hand: the algorithm, the search, the "
+        "lemma, the path. Participles which ordinarily read as predicate "
+        "adjectives, such as `is connected`, count only when an agent follows. "
+        "Record a deliberate exception in `.styleck-allow`, where text after a "
+        "colon anchors it to the lines containing that text."
+    ),
+    bad="A zero-path residual is accepted exactly when it is empty.",
+    good="Accept a zero-path residual exactly when it is empty.",
+)
+def check_voice_passive(document: Document) -> Iterable[Violation]:
+    prose = document.prose_mask()
+    for match in PASSIVE_RE.finditer(prose):
+        participle = WORD_RE.findall(match.group(0))[-1].casefold()
+        if participle in NON_PARTICIPLES:
+            continue
+        if participle in ADJECTIVAL_PARTICIPLES and not AGENT_RE.match(prose, match.end()):
+            continue
+        yield make(
+            document,
+            "voice-passive",
+            match.start(),
+            f"passive '{match.group(0)}'; name the actor and put it before the verb",
+        )
+
+
+@register(
+    id="term-undeclared",
+    section="Write like a human",
+    severity=WARN,
+    applies_to=TEX_ONLY,
+    summary="Account for every word the paper leans on as vocabulary.",
+    detail=(
+        "A word which is neither ordinary English nor generic paper vocabulary, "
+        "and which the paper reuses, is project vocabulary: mark it with "
+        "`\\term{...}` at first use, or list it in `.styleck-terms` as "
+        "background the reader already has. The rule reports a word only from "
+        "its fourth appearance, so a phrase used once in passing still needs "
+        "judgment."
+    ),
+    bad="An attachment of $R$ meets $C$ ... twenty more attachments, none defined.",
+    good="List `attachment` in `.styleck-terms`, or mark \\term{attachment} at first use.",
+)
+def check_term_undeclared(document: Document) -> Iterable[Violation]:
+    prose = _without_commands(document.prose_mask())
+    declared = _declared_words(document)
+    counts: dict[str, int] = {}
+    first: dict[str, int] = {}
+    lowercase: dict[str, bool] = {}
+    for match in WORD_RE.finditer(prose):
+        word = match.group(0)
+        key = _word_key(word)
+        counts[key] = counts.get(key, 0) + 1
+        first.setdefault(key, match.start())
+        lowercase[key] = lowercase.get(key, False) or word[0].islower()
+    for key in sorted(counts, key=lambda item: first[item]):
+        if counts[key] < UNDECLARED_MIN_USES or _is_common(key) or key in declared:
+            continue
+        if not lowercase[key]:
+            continue
+        yield make(
+            document,
+            "term-undeclared",
+            first[key],
+            f"'{key}' carries {counts[key]} uses with no definition; mark it with "
+            f"\\term{{...}} or list it in .styleck-terms",
+        )
+
+
+@register(
+    id="term-head-collision",
+    section="Write like a human",
+    severity=WARN,
+    applies_to=TEX_ONLY,
+    summary="Give one head noun to one concept.",
+    detail=(
+        "When the head noun of a term the paper marked with `\\term{...}` also "
+        "appears under other "
+        "modifiers, the reader has to work out whether `boundary occurrence` "
+        "and `terminal occurrence` name one object or two. Rename one of them, "
+        "or define the distinction."
+    ),
+    bad="A \\term{terminal occurrence} is a slot ... collect the boundary occurrences.",
+    good="A \\term{terminal occurrence} is a slot ... collect the terminal occurrences.",
+)
+def check_term_head_collision(document: Document) -> Iterable[Violation]:
+    # Only heads the paper coined itself: field vocabulary such as `path`
+    # takes many qualifiers by right.
+    prose = document.prose_mask()
+    vocabulary = set(introduced_terms(document.text))
+    heads = {
+        term.split()[-1].casefold()
+        for term in vocabulary
+        if len(term.split()) > 1
+    }
+    for head in sorted(heads):
+        pattern = re.compile(
+            rf"(?<![A-Za-z0-9])({WORD_RE.pattern})\s+{re.escape(head)}s?(?![A-Za-z0-9])",
+            re.I,
+        )
+        modifiers: dict[str, int] = {}
+        for match in pattern.finditer(prose):
+            modifier = match.group(1).casefold()
+            if modifier in MODIFIER_STOP or modifier in heads:
+                continue
+            # An ordinary adjective does not make a second name for the head.
+            if _is_common(modifier):
+                continue
+            modifiers.setdefault(modifier, match.start())
+        if len(modifiers) < 2:
+            continue
+        latest = max(modifiers.values())
+        names = ", ".join(f"{modifier} {head}" for modifier in sorted(modifiers))
+        yield make(
+            document,
+            "term-head-collision",
+            latest,
+            f"'{head}' heads several names ({names}); give each concept one name",
+        )

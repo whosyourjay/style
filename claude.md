@@ -29,15 +29,15 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
 - **eq-block-size** (warn) — Keep a derivation block to 5 rows or fewer.
   Break a longer chain with a sentence of explanation and a new block.
 
-- **eq-needs-align** (warn) — Split a display with two or more relations into an {align}.
-  A second relation may stay when the far side is small. Give each relation its own row so a
-  reader can follow the derivation.
+- **eq-needs-align** (warn) — Give each relation a row of its own.
+  One relation per display, or per row of an align, however short the far side is. Record a
+  deliberate exception in a `.styleck-allow` file next to the source.
   ✗
 
   ```latex
-  \[
-    f(x) = g(x) = h(x)
-  \]
+  \begin{align}
+    f(x) &= g(x) = h(x)
+  \end{align}
   ```
 
   ✓
@@ -217,12 +217,27 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
 
   ✓ `The \term{alignment path} records the script in lattice coordinates.`
 
+- **term-head-collision** (warn) — Give one head noun to one concept.
+  When the head noun of a term the paper marked with `\term{...}` also appears under other
+  modifiers, the reader has to work out whether `boundary occurrence` and `terminal occurrence`
+  name one object or two. Rename one of them, or define the distinction.
+  ✗ `A \term{terminal occurrence} is a slot ... collect the boundary occurrences.`
+  ✓ `A \term{terminal occurrence} is a slot ... collect the terminal occurrences.`
+
 - **term-single-use** (warn) — Name a technical term only when the paper reuses the name.
   A one-off phrase usually needs a direct definition of its symbol, not a bold name. The checker
   covers literal multiword terms and ordinary singular/plural forms; irregular inflections, one-
   word terms, and conceptual reuse still require judgment.
   ✗ `Define the \term{window family} $\mathcal W_m$ to be all intervals.`
   ✓ `Let $\mathcal W_m$ be the set of all length-$m$ intervals.`
+
+- **term-undeclared** (warn) — Account for every word the paper leans on as vocabulary.
+  A word which is neither ordinary English nor generic paper vocabulary, and which the paper
+  reuses, is project vocabulary: mark it with `\term{...}` at first use, or list it in
+  `.styleck-terms` as background the reader already has. The rule reports a word only from its
+  fourth appearance, so a phrase used once in passing still needs judgment.
+  ✗ `An attachment of $R$ meets $C$ ... twenty more attachments, none defined.`
+  ✓ `List `attachment` in `.styleck-terms`, or mark \term{attachment} at first use.`
 
 - **the-display** (error) — Never write `the display` to refer to a display equation.
   Number the equation and reference it, or just say `this`.
@@ -247,6 +262,15 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   Put the named actor before the verb.
   ✗ `A vertex of in-degree at least 11 is called heavy.`
   ✓ `We call a vertex heavy when its in-degree reaches 11.`
+
+- **voice-passive** (warn) — Name the actor instead of letting a passive verb hide it.
+  A be-verb with a past participle drops the actor, and mathematical prose almost always has one
+  to hand: the algorithm, the search, the lemma, the path. Participles which ordinarily read as
+  predicate adjectives, such as `is connected`, count only when an agent follows. Record a
+  deliberate exception in `.styleck-allow`, where text after a colon anchors it to the lines
+  containing that text.
+  ✗ `A zero-path residual is accepted exactly when it is empty.`
+  ✓ `Accept a zero-path residual exactly when it is empty.`
 
 ## Diagrams
 
