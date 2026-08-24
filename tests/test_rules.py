@@ -392,6 +392,12 @@ class TestTermUndeclared(unittest.TestCase):
         body = "The result holds. The result is short. The result again. The result."
         self.assertNotIn("term-undeclared", ids(tex(body)))
 
+    def test_generic_algorithm_prose_passes(self):
+        sentence = ("Each recursive candidate preserves the global promise under "
+                    "this parameter and convention; correctness follows when "
+                    "the recursion can produce an answer. ")
+        self.assertNotIn("term-undeclared", ids(tex(sentence * 4)))
+
     def test_label_words_are_not_prose(self):
         body = ("See Lemma~\\ref{lem:one} and Lemma~\\ref{lem:two} and "
                 "Lemma~\\ref{lem:three} and Lemma~\\ref{lem:four}.")
