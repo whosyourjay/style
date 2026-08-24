@@ -243,6 +243,9 @@ def _term_pattern(term: str) -> re.Pattern:
     return re.compile(rf"(?<![A-Za-z0-9]){body}(?![A-Za-z0-9])", re.I)
 
 
+_IRREGULAR_SINGULARS = {value: key for key, value in IRREGULAR_PLURALS.items()}
+
+
 def _term_variants(term: str) -> set[str]:
     """Return a term and its ordinary singular or plural counterpart."""
     words = term.split()
@@ -250,6 +253,10 @@ def _term_variants(term: str) -> set[str]:
         return {term}
     last = words[-1]
     variants = {term}
+    irregular = (IRREGULAR_PLURALS.get(last.casefold())
+                 or _IRREGULAR_SINGULARS.get(last.casefold()))
+    if irregular:
+        return variants | {" ".join(words[:-1] + [irregular])}
     if last.casefold().endswith("ies"):
         counterpart = last[:-3] + "y"
     elif re.search(r"(?:ses|xes|zes|ches|shes)$", last, re.I):
@@ -627,9 +634,10 @@ def _declared_words(document: Document) -> set[str]:
     vocabulary = set(introduced_terms(document.text))
     vocabulary.update(background_terms(document.path))
     return {
-        _word_key(word)
+        form
         for term in vocabulary
         for word in WORD_RE.findall(term)
+        for form in _base_forms(word.casefold())
     }
 
 
@@ -696,7 +704,9 @@ def check_term_undeclared(document: Document) -> Iterable[Violation]:
         first.setdefault(key, match.start())
         lowercase[key] = lowercase.get(key, False) or word[0].islower()
     for key in sorted(counts, key=lambda item: first[item]):
-        if counts[key] < UNDECLARED_MIN_USES or _is_common(key) or key in declared:
+        if counts[key] < UNDECLARED_MIN_USES or _is_common(key):
+            continue
+        if any(form in declared for form in _base_forms(key)):
             continue
         if not lowercase[key]:
             continue
@@ -729,12 +739,18 @@ def check_term_head_collision(document: Document) -> Iterable[Violation]:
     # Only heads the paper coined itself: field vocabulary such as `path`
     # takes many qualifiers by right.
     prose = document.prose_mask()
-    vocabulary = set(introduced_terms(document.text))
+    background = {
+        word.casefold()
+        for term in background_terms(document.path)
+        for word in WORD_RE.findall(term)
+    }
+    background = {_word_key(word) for word in background}
     heads = {
         term.split()[-1].casefold()
-        for term in vocabulary
+        for term in introduced_terms(document.text)
         if len(term.split()) > 1
     }
+    heads = {head for head in heads if _word_key(head) not in background}
     for head in sorted(heads):
         pattern = re.compile(
             rf"(?<![A-Za-z0-9])({WORD_RE.pattern})\s+{re.escape(head)}s?(?![A-Za-z0-9])",
