@@ -114,6 +114,12 @@ EMPTY_ADJECTIVE_RE = re.compile(
     r"plethora|invaluable)\b",
     re.I,
 )
+# A narrow detector for compressed attributive phrases.  The optional final
+# hyphen catches a math component blanked by ``prose_mask()``, as in
+# ``maximum-in-degree-$(k+1)$ embedding``.
+HYPHEN_STACK_RE = re.compile(
+    r"\b[A-Za-z]+(?:-[A-Za-z]+){2,}(?:-(?=\s))?(?=\s+[A-Za-z])"
+)
 META_RE = re.compile(
     r"\b(?:as\s+requested|per\s+your|as\s+you\s+asked|changed\s+from|"
     r"was\s+previously|previously\s+(?:this|we|it)|used\s+to\s+be|"
@@ -550,6 +556,32 @@ def check_empty_adjective(document: Document) -> Iterable[Violation]:
         document, "empty-adjective", EMPTY_ADJECTIVE_RE,
         "'{}' is marketing language; say what the thing does",
     )
+
+
+@register(
+    id="hyphen-stack",
+    section="Write like a human",
+    severity=WARN,
+    applies_to=PROSE_SUFFIXES,
+    summary="Unpack chains of hyphenated modifiers.",
+    detail=(
+        "Prefer a clause or a prepositional phrase to a modifier made from "
+        "three or more joined words. Keep established terms such as `in-degree` "
+        "when the hyphen prevents a misreading. The checker flags chains with "
+        "at least two hyphens; single-hyphen compounds still require judgment."
+    ),
+    bad="maximum-in-degree-three separators",
+    good="separators with in-degree at most three",
+)
+def check_hyphen_stack(document: Document) -> Iterable[Violation]:
+    for match in HYPHEN_STACK_RE.finditer(document.prose_mask()):
+        phrase = match.group(0).rstrip("-")
+        yield make(
+            document,
+            "hyphen-stack",
+            match.start(),
+            f"modifier chain '{phrase}' is hard to parse; use a clause or a `with` phrase",
+        )
 
 
 @register(

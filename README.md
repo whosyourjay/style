@@ -61,7 +61,8 @@ styleck --concordance the paper.tex  # inspect every prose occurrence
 
 Errors return a nonzero exit status; warnings are advisory unless
 `--warn-exit` is supplied. The checker skips mathematics, comments, diagrams,
-and verbatim material when applying prose rules.
+and verbatim material when applying prose rules. TikZ pictures and
+`\tikzset{...}` configuration blocks count as diagram code.
 
 ### Declare assumed vocabulary
 

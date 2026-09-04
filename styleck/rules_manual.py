@@ -83,6 +83,22 @@ manual(
 )
 
 manual(
+    id="hyphenated-modifier",
+    section="Write like a human",
+    summary="Prefer ordinary phrases to coined hyphenated modifiers.",
+    detail=(
+        "A hyphenated modifier often compresses a relation that a clause or "
+        "prepositional phrase would state more clearly. Write `an automaton "
+        "with $m$ states`, not `an $m$-state automaton`, and write `cost within "
+        "a constant factor`, not `constant-factor cost`. Keep established "
+        "terms such as `in-degree` and `path-invariant`. The `hyphen-stack` "
+        "warning catches the most obvious chains; audit shorter compounds by hand."
+    ),
+    bad="maximum-in-degree-three separators",
+    good="separators with in-degree at most three",
+)
+
+manual(
     id="active-voice",
     section="Write like a human",
     summary="Put the named actor before the verb.",
@@ -93,6 +109,19 @@ manual(
     ),
     bad="The deadline is met by the schedule constructed above.",
     good="The schedule above meets every deadline.",
+)
+
+manual(
+    id="citation-first-author",
+    section="Write like a human",
+    summary="Use the first author plus et al. for works with at least three authors.",
+    detail=(
+        "Name both authors of a two-author work. For three or more authors, "
+        "write the first author's surname followed by `et al.` and leave the "
+        "full author list to the bibliography."
+    ),
+    bad="Abascal, Guruswami, and Kothari prove the bound.",
+    good="Abascal et al. prove the bound.",
 )
 
 manual(

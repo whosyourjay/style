@@ -159,6 +159,13 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `The binary entropy function is $h_2(p)=-p\log p-(1-p)\log(1-p)$.`
   ✓ `For binary entropy $h_2$, independence gives the required rate.`
 
+- **citation-first-author** (judgment) — Use the first author plus et al. for works with at
+  least three authors.
+  Name both authors of a two-author work. For three or more authors, write the first author's
+  surname followed by `et al.` and leave the full author list to the bibliography.
+  ✗ `Abascal, Guruswami, and Kothari prove the bound.`
+  ✓ `Abascal et al. prove the bound.`
+
 - **empty-adjective** (warn) — Cut jargony adjectives that do not change the meaning.
   ✗ `This novel, powerful technique is comprehensive.`
   ✓ `This technique handles every case in one pass.`
@@ -167,6 +174,22 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   If the step really is clear, the reader does not need to be told.
   ✗ `Clearly the potential drops.`
   ✓ `The potential drops because each square shrinks.`
+
+- **hyphen-stack** (warn) — Unpack chains of hyphenated modifiers.
+  Prefer a clause or a prepositional phrase to a modifier made from three or more joined words.
+  Keep established terms such as `in-degree` when the hyphen prevents a misreading. The checker
+  flags chains with at least two hyphens; single-hyphen compounds still require judgment.
+  ✗ `maximum-in-degree-three separators`
+  ✓ `separators with in-degree at most three`
+
+- **hyphenated-modifier** (judgment) — Prefer ordinary phrases to coined hyphenated modifiers.
+  A hyphenated modifier often compresses a relation that a clause or prepositional phrase would
+  state more clearly. Write `an automaton with $m$ states`, not `an $m$-state automaton`, and
+  write `cost within a constant factor`, not `constant-factor cost`. Keep established terms such
+  as `in-degree` and `path-invariant`. The `hyphen-stack` warning catches the most obvious
+  chains; audit shorter compounds by hand.
+  ✗ `maximum-in-degree-three separators`
+  ✓ `separators with in-degree at most three`
 
 - **jargon-the-x** (judgment) — Do not write "the X" for jargon X the paper has not defined.
   Define technical vocabulary at its first substantive use. Make the referent and quantifier

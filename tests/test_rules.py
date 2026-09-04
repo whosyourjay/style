@@ -24,6 +24,30 @@ def ids(document: Document) -> list[str]:
     return [v.rule_id for v in check_document(document)]
 
 
+class TestDiagramMasking(unittest.TestCase):
+    def test_tikzset_configuration_is_not_prose(self):
+        source = (
+            "\\tikzset{\n"
+            "  vertex/.style={circle,fill=black,inner sep=1.6pt},\n"
+            "  proof edge/.style={line width=.85pt,proofgray}\n"
+            "}\n"
+        )
+        document = Document("figure.tex", source)
+        self.assertEqual(document.prose_mask().strip(), "")
+        self.assertNotIn("term-undeclared", ids(document))
+        self.assertNotIn("tex-short-lines", ids(document))
+
+    def test_tikzset_balances_nested_and_escaped_braces(self):
+        source = (
+            r"\tikzset{label/.style={text={a\{b\}}}}" + "\n"
+            "Ordinary prose after the configuration remains visible.\n"
+        )
+        document = Document("figure.tex", source)
+        mask = document.prose_mask()
+        self.assertNotIn("label", mask)
+        self.assertIn("Ordinary prose after the configuration remains visible.", mask)
+
+
 class TestTrailingPunctuation(unittest.TestCase):
     def test_period_after_display_is_flagged(self):
         self.assertIn("eq-trailing-punct", ids(tex("\\[\n  x = y .\n\\]")))
@@ -201,6 +225,30 @@ class TestProse(unittest.TestCase):
     def test_preamble_is_not_prose(self):
         document = Document("t.tex", "\\title{A novel method}\n\\begin{document}\nHi.\n")
         self.assertNotIn("empty-adjective", ids(document))
+
+    def test_hyphen_stack_is_flagged(self):
+        body = "Maximum-in-degree-three separators suffice."
+        self.assertIn("hyphen-stack", ids(tex(body)))
+
+    def test_two_hyphen_modifier_is_flagged(self):
+        body = "A bounded-in-degree automaton suffices."
+        self.assertIn("hyphen-stack", ids(tex(body)))
+
+    def test_hyphen_stack_with_math_component_is_flagged(self):
+        body = "A maximum-in-degree-$(k+1)$ embedding preserves paths."
+        self.assertIn("hyphen-stack", ids(tex(body)))
+
+    def test_single_hyphen_term_passes(self):
+        body = "A path-invariant split preserves paths."
+        self.assertNotIn("hyphen-stack", ids(tex(body)))
+
+    def test_expanded_hyphen_stack_passes(self):
+        body = "Separators with in-degree at most three suffice."
+        self.assertNotIn("hyphen-stack", ids(tex(body)))
+
+    def test_hyphens_inside_math_pass(self):
+        body = "The expression $a-b-c$ vanishes."
+        self.assertNotIn("hyphen-stack", ids(tex(body)))
 
     def test_vague_theorem_reference_is_flagged(self):
         self.assertIn("precise-reference", ids(tex("The theorem permits equality.")))

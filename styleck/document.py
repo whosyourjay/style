@@ -35,6 +35,7 @@ ALGO_ENVS = frozenset({
 
 BEGIN_RE = re.compile(r"\\begin\{([A-Za-z@*]+)\}")
 COMMAND_RE = re.compile(r"\\(?:[A-Za-z@]+\*?|.)", re.S)
+VERBATIM_BRACED_COMMANDS = frozenset({"\\tikzset"})
 TEX_SUFFIXES = frozenset({".tex", ".sty", ".cls", ".tikz"})
 
 
@@ -93,6 +94,36 @@ def _find_env_end(text: str, env: str, start: int) -> int:
     return pos
 
 
+def _find_braced_end(text: str, start: int) -> int | None:
+    """Index just past a balanced braced argument, or None if absent."""
+    pos = start
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    if pos >= len(text) or text[pos] != "{":
+        return None
+
+    depth = 1
+    pos += 1
+    while pos < len(text):
+        char = text[pos]
+        if char == "\\":
+            command = COMMAND_RE.match(text, pos)
+            pos = command.end() if command else pos + 1
+            continue
+        if char == "%":
+            newline = text.find("\n", pos)
+            pos = len(text) if newline < 0 else newline + 1
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return pos + 1
+        pos += 1
+    return len(text)
+
+
 def scan(text: str) -> list[Span]:
     """Split `text` into non-overlapping spans covering the whole string."""
     marked: list[Span] = []
@@ -136,6 +167,11 @@ def _scan_backslash(text: str, pos: int, marked: list[Span]) -> int:
         marked.append(Span(INLINE, pos, stop))
         return stop
     command = COMMAND_RE.match(text, pos)
+    if command and command.group(0) in VERBATIM_BRACED_COMMANDS:
+        stop = _find_braced_end(text, command.end())
+        if stop is not None:
+            marked.append(Span(VERBATIM, pos, stop))
+            return stop
     return command.end() if command else pos + 1
 
 
