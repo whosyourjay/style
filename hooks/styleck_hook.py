@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -34,6 +35,8 @@ from styleck.rule import ERROR, MANUAL  # noqa: E402
 
 CHECKED = {".tex", ".sty", ".cls", ".tikz"}
 BLOCK_EXIT = 2
+REPORT_LINES = 10
+REPORT_CHARS = 3000
 LAUNCHER = Path(__file__).resolve().parent.parent / "bin" / "styleck"
 PATCH_PATH = re.compile(
     r"^\*\*\* (?:Add|Delete|Update) File: (.+)$|^\*\*\* Move to: (.+)$",
@@ -136,11 +139,26 @@ def check(payload: dict) -> int:
             messages.extend(_block_text(path, errors, warnings))
         else:
             messages.extend(_advice_text(path, warnings))
+    message = _preview("\n".join(messages))
     if blocking:
-        sys.stderr.write("\n".join(messages) + "\n")
+        sys.stderr.write(message + "\n")
         return BLOCK_EXIT
-    _emit_context("\n".join(messages))
+    _emit_context(message)
     return 0
+
+
+def _preview(message: str) -> str:
+    """Keep hook context short and save the complete diagnostics separately."""
+    lines = message.splitlines()
+    if len(lines) <= REPORT_LINES and len(message) <= REPORT_CHARS:
+        return message
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", prefix="styleck-", suffix=".log", delete=False
+    ) as report:
+        report.write(message + "\n")
+        report_path = report.name
+    head = "\n".join(lines[:REPORT_LINES])[:REPORT_CHARS]
+    return f"{head}\n...\nFull styleck report: {report_path}"
 
 
 def _block_text(path: Path, errors: list, warnings: list) -> list[str]:

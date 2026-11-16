@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 from . import check_document
@@ -13,6 +14,7 @@ from .concordance import concordance
 from .document import Document
 from .docgen import render, render_summary
 from .fixers import apply_fixes
+from .linguistics import VocabularySetupError
 from .rule import ERROR, MANUAL, REGISTRY
 from .sync import find_targets, sync
 
@@ -23,7 +25,11 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="styleck", description=__doc__)
     parser.add_argument("paths", nargs="*", help="files or directories to check")
     parser.add_argument("--fix", action="store_true", help="repair what is mechanical")
-    parser.add_argument("--json", action="store_true", help="machine readable output")
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument("--json", action="store_true", help="machine readable output")
+    output.add_argument(
+        "--counts", action="store_true", help="print occurrence counts by lint rule"
+    )
     parser.add_argument("--rules", help="comma separated rule ids to run")
     parser.add_argument(
         "--new-since", metavar="REF",
@@ -149,7 +155,9 @@ def _only_new(path: Path, document: Document, found: list, ref: str,
 
 def _report(violations: list, args: argparse.Namespace) -> int:
     real = [v for v in violations if v.severity != MANUAL]
-    if args.json:
+    if args.counts:
+        sys.stdout.write(_render_counts(real))
+    elif args.json:
         payload = [vars(v) for v in real]
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     else:
@@ -161,5 +169,22 @@ def _report(violations: list, args: argparse.Namespace) -> int:
     return 1 if (args.warn_exit and real) else 0
 
 
+def _render_counts(violations: list) -> str:
+    counts = Counter(v.rule_id for v in violations)
+    rows = sorted(counts.items(), key=lambda row: (-row[1], row[0]))
+    width = max([len("Total"), *(len(rule_id) for rule_id in counts)])
+    count_width = max(len("Count"), len(str(len(violations))))
+    separator = f"{'-' * width}  {'-' * count_width}"
+    lines = [f"{'Rule':<{width}}  {'Count':>{count_width}}", separator]
+    lines.extend(f"{rule_id:<{width}}  {count:>{count_width}}" for rule_id, count in rows)
+    lines.extend([separator, f"{'Total':<{width}}  {len(violations):>{count_width}}"])
+    return "\n".join(lines) + "\n"
+
+
 def main() -> None:
-    raise SystemExit(run(sys.argv[1:]))
+    try:
+        status = run(sys.argv[1:])
+    except VocabularySetupError as error:
+        sys.stderr.write(f"styleck: {error}\n")
+        status = 2
+    raise SystemExit(status)

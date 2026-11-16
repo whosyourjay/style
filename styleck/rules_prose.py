@@ -7,9 +7,11 @@ from typing import Iterable
 
 from .document import COMMENT, TEX_SUFFIXES, Document
 from .rule import ERROR, WARN, Violation, make, register
-from .common_words import COMMON_WORDS, IRREGULAR_PLURALS
+from .common_words import COMMON_WORDS
+from .linguistics import lemma, observed_variants
+from .vocabulary import findings as terminology_findings
 from .terms import TERM_RE, background_terms, introduced_terms, normalize_term
-from .tex_args import heading_regions, optional_arg_at
+from .tex_args import heading_regions
 from .rules_proof_prose import NAMED_BOUND_RE
 
 PROSE_SUFFIXES = (".md", ".tex", ".txt")
@@ -96,7 +98,6 @@ AGENT_RE = re.compile(r"\s+by(?![A-Za-z])")
 # A word may carry single hyphens, but `block--cut` is two words.
 WORD_RE = re.compile(r"[A-Za-z](?:[A-Za-z]|-(?=[A-Za-z])){2,}")
 # Commands and their braced arguments: `\\ref{lem:x}` is not prose.
-COMMAND_RE = re.compile(r"\\[A-Za-z@]+\*?(?:\s*\{[^{}]*\})?")
 # Determiners and connectives never count as the modifier of a term.
 MODIFIER_STOP = frozenset({
     "a", "an", "the", "this", "that", "these", "those", "its", "their", "our",
@@ -106,7 +107,6 @@ MODIFIER_STOP = frozenset({
     "than", "when", "where", "which", "is", "are", "be", "on", "into", "onto",
     "both", "many", "few", "more", "most", "least", "only", "all",
 })
-UNDECLARED_MIN_USES = 4
 
 NAMING_RE = re.compile(
     r"\b(?:is|are|was|were)\s+(?:called|denoted|known\s+as|said\s+to\s+be)\b", re.I
@@ -274,36 +274,6 @@ def _term_pattern(term: str) -> re.Pattern:
     return re.compile(rf"(?<![A-Za-z0-9]){body}(?![A-Za-z0-9])", re.I)
 
 
-_IRREGULAR_SINGULARS = {value: key for key, value in IRREGULAR_PLURALS.items()}
-
-
-def _term_variants(term: str) -> set[str]:
-    """Return a term and its ordinary singular or plural counterpart."""
-    words = term.split()
-    if not words or not re.fullmatch(r"[A-Za-z]+", words[-1]):
-        return {term}
-    last = words[-1]
-    variants = {term}
-    irregular = (IRREGULAR_PLURALS.get(last.casefold())
-                 or _IRREGULAR_SINGULARS.get(last.casefold()))
-    if irregular:
-        return variants | {" ".join(words[:-1] + [irregular])}
-    if last.casefold().endswith("ies"):
-        counterpart = last[:-3] + "y"
-    elif re.search(r"(?:ses|xes|zes|ches|shes)$", last, re.I):
-        counterpart = last[:-2]
-    elif last.casefold().endswith("s") and not last.casefold().endswith("ss"):
-        counterpart = last[:-1]
-    elif re.search(r"[^aeiou]y$", last, re.I):
-        counterpart = last[:-1] + "ies"
-    elif re.search(r"(?:s|x|z|ch|sh)$", last, re.I):
-        counterpart = last + "es"
-    else:
-        counterpart = last + "s"
-    variants.add(" ".join((*words[:-1], counterpart)))
-    return variants
-
-
 def _referent_follows(document: Document, offset: int) -> bool:
     """Whether the source at ``offset`` supplies the referent it was promised.
 
@@ -369,7 +339,7 @@ def check_term_first_use(document: Document) -> Iterable[Violation]:
                 document,
                 "term-first-use",
                 earlier.start(),
-                f"'{earlier.group(0)}' appears before its first \\term{{...}} marking",
+            f"'{earlier.group(0)}' appears before its first definition marking",
             )
 
 
@@ -475,7 +445,7 @@ def check_term_single_use(document: Document) -> Iterable[Violation]:
         seen.add(key)
         mention_offsets = {
             match.start()
-            for variant in _term_variants(term)
+            for variant in observed_variants(term, prose)
             for match in _term_pattern(variant).finditer(prose)
             if not _inside(match.start(), title_regions)
         }
@@ -639,7 +609,7 @@ def _first_mention(prose: str, term: str, limit: int,
                    title_regions: list[tuple[int, int]]):
     """Return the earliest mention of `term` or an inflection before `limit`."""
     earliest = None
-    for variant in _term_variants(term):
+    for variant in observed_variants(term, prose[:limit]):
         for match in _term_pattern(variant).finditer(prose, 0, limit):
             if _inside(match.start(), title_regions):
                 continue
@@ -650,59 +620,19 @@ def _first_mention(prose: str, term: str, limit: int,
 
 
 def _word_key(word: str) -> str:
-    """Fold a word onto one key shared by its singular and plural forms."""
-    lower = word.casefold()
-    if lower in COMMON_WORDS:
-        return lower
-    if lower in IRREGULAR_PLURALS:
-        return IRREGULAR_PLURALS[lower]
-    return min((variant.casefold() for variant in _term_variants(lower)), key=len)
-
-
-def _base_forms(word: str) -> Iterable[str]:
-    """Yield the word with its plain -s, -ing, and -ed endings folded back."""
-    yield word
-    for suffix, restores in (("s", ("",)), ("ing", ("", "e")), ("ed", ("", "e"))):
-        if word.endswith(suffix) and len(word) > len(suffix) + 2:
-            stem = word[: -len(suffix)]
-            for restore in restores:
-                yield stem + restore
-            if len(stem) > 2 and stem[-1] == stem[-2]:
-                yield stem[:-1]
+    return lemma(word)
 
 
 def _is_common(word: str) -> bool:
-    if any(form in COMMON_WORDS for form in _base_forms(word)):
+    if any(lemma(word, pos) in COMMON_WORDS for pos in ("n", "v", "a", "r")):
         return True
     parts = word.split("-")
     return len(parts) > 1 and all(_is_common(part) for part in parts if part)
 
 
-def _without_commands(prose: str) -> str:
-    """Blank every TeX command and its argument, keeping all offsets."""
-    text = list(prose)
-    for match in COMMAND_RE.finditer(prose):
-        end = match.end()
-        if match.group(0).startswith(r"\begin{"):
-            _, end = optional_arg_at(prose, end)
-        text[match.start():end] = " " * (end - match.start())
-    return "".join(text)
-
-
-def _declared_words(document: Document) -> set[str]:
-    """Every word covered by a marked term or by the project vocabulary."""
-    vocabulary = set(introduced_terms(document.text))
-    vocabulary.update(background_terms(document.path))
-    return {
-        form
-        for term in vocabulary
-        for word in WORD_RE.findall(term)
-        for form in _base_forms(word.casefold())
-    }
-
-
 @register(
     id="voice-passive",
+    enabled_by_default=False,
     section="Write like a human",
     severity=WARN,
     applies_to=PROSE_SUFFIXES,
@@ -739,43 +669,25 @@ def check_voice_passive(document: Document) -> Iterable[Violation]:
     section="Write like a human",
     severity=WARN,
     applies_to=TEX_ONLY,
-    summary="Account for every word the paper leans on as vocabulary.",
+    summary="Introduce unfamiliar mathematical terms, including specialized uses of common words.",
     detail=(
-        "A word which is neither ordinary English nor generic paper vocabulary, "
-        "and which the paper reuses, is project vocabulary: mark it with "
-        "`\\term{...}` at first use, or list it in `.styleck-terms` as "
-        "background the reader already has. The rule reports a word only from "
-        "its fourth appearance, so a phrase used once in passing still needs "
-        "judgment."
+        "The checker compares repeated noun phrases and their contexts with "
+        "mathematical reference texts and ordinary prose. A common English word "
+        "can still name an unexplained mathematical object. Findings start at "
+        "four uses and quote the source phrase. Define the term with "
+        "`\\term{...}` or `\\deftext{...}`, or list assumed vocabulary in "
+        "`.styleck-terms`. Subject profiles live in `.styleck-vocabulary`."
     ),
     bad="An attachment of $R$ meets $C$ ... twenty more attachments, none defined.",
     good="List `attachment` in `.styleck-terms`, or mark \\term{attachment} at first use.",
 )
 def check_term_undeclared(document: Document) -> Iterable[Violation]:
-    prose = _without_commands(document.prose_mask())
-    declared = _declared_words(document)
-    counts: dict[str, int] = {}
-    first: dict[str, int] = {}
-    lowercase: dict[str, bool] = {}
-    for match in WORD_RE.finditer(prose):
-        word = match.group(0)
-        key = _word_key(word)
-        counts[key] = counts.get(key, 0) + 1
-        first.setdefault(key, match.start())
-        lowercase[key] = lowercase.get(key, False) or word[0].islower()
-    for key in sorted(counts, key=lambda item: first[item]):
-        if counts[key] < UNDECLARED_MIN_USES or _is_common(key):
-            continue
-        if any(form in declared for form in _base_forms(key)):
-            continue
-        if not lowercase[key]:
-            continue
+    for offset, phrase, count, reason in terminology_findings(document):
         yield make(
-            document,
-            "term-undeclared",
-            first[key],
-            f"'{key}' carries {counts[key]} uses with no definition; mark it with "
-            f"\\term{{...}} or list it in .styleck-terms",
+            document, "term-undeclared", offset,
+            f"'{phrase}' has {count} uses without a recognized definition; {reason}; "
+            f"mark it with \\term{{...}} or \\deftext{{...}}, "
+            f"or list it in .styleck-terms",
         )
 
 

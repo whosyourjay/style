@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import random
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hooks.styleck_hook import _targets  # noqa: E402
+from hooks.styleck_hook import REPORT_CHARS, REPORT_LINES, _preview, _targets  # noqa: E402
 from hooks.styleck_pre_commit import staged_findings  # noqa: E402
 
 PREAMBLE = "\\documentclass{article}\n\\begin{document}\n"
@@ -55,6 +56,28 @@ class TestAgentPayloads(unittest.TestCase):
 *** End Patch"""
         payload = {"cwd": "/repo", "tool_input": {"command": patch}}
         self.assertEqual(_targets(payload), [Path("/repo/paper.tex")])
+
+
+class TestHookOutput(unittest.TestCase):
+    def test_large_reports_show_only_the_head_and_preserve_full_diagnostics(self):
+        rng = random.Random(0)
+        reports = ["brief warning", "x" * 6000, "warning\n" * 200]
+        reports.extend(
+            "\n".join("x" * rng.randrange(1, 4000) for _ in range(rng.randrange(1, 30)))
+            for _ in range(20)
+        )
+        for message in reports:
+            with self.subTest(length=len(message)):
+                preview = _preview(message)
+                self.assertLess(len(preview), 5000)
+                if len(message.splitlines()) <= REPORT_LINES and len(message) <= REPORT_CHARS:
+                    self.assertEqual(preview, message)
+                    continue
+                report = Path(preview.rsplit("Full styleck report: ", 1)[1])
+                self.addCleanup(report.unlink)
+                self.assertEqual(report.read_text(encoding="utf-8"), message + "\n")
+                self.assertLessEqual(len(preview.splitlines()), REPORT_LINES + 2)
+                self.assertTrue(message.startswith(preview.split("\n...\n", 1)[0]))
 
 
 class TestPreCommit(unittest.TestCase):

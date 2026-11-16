@@ -380,7 +380,7 @@ class TestTermVocabulary(unittest.TestCase):
     def test_source_file_can_supply_background_terms(self):
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
-            (root / "source.tex").write_text(r"A \term{renewal process}.")
+            (root / "source.tex").write_text(r"A \deftext{renewal process}.")
             (root / "paper.styleck-terms").write_text("@source.tex\n")
             document = self.document(root, r"A \term{renewal process} appears.")
             self.assertIn("term-background", ids(document))
@@ -479,21 +479,34 @@ class TestNestedRelations(unittest.TestCase):
 
 class TestTermUndeclared(unittest.TestCase):
     def test_repeated_undeclared_word_is_flagged(self):
-        body = ("An attachment meets it. A second attachment follows. "
-                "A third attachment appears. A fourth attachment closes.")
+        body = "A copper vertex of $G$ meets its neighbor. " * 4
         self.assertIn("term-undeclared", ids(tex(body)))
 
     def test_marked_word_passes(self):
-        body = ("An \\term{attachment} meets it. A second attachment follows. "
-                "A third attachment appears. A fourth attachment closes.")
-        self.assertNotIn("term-undeclared", ids(tex(body)))
+        for macro in ("term", "deftext"):
+            with self.subTest(macro=macro):
+                body = f"A \\{macro}{{copper vertex}} meets its neighbor. "
+                body += "Another copper vertex of $G$ meets its neighbor. " * 4
+                self.assertNotIn("term-undeclared", ids(tex(body)))
+
+    def test_declared_word_families_pass(self):
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / ".styleck-terms").write_text("satisfiable\ncomputable\nirreducible\n")
+            body = "Satisfiability, computability, and irreducibility are required. " * 4
+            document = Document(str(root / "paper.tex"), PREAMBLE + body + "\n\\end{document}\n")
+            self.assertNotIn("term-undeclared", ids(document))
 
     def test_three_uses_pass(self):
-        body = "An attachment meets it. A second attachment follows. A third attachment."
+        body = "A copper vertex of $G$ meets its neighbor. " * 3
         self.assertNotIn("term-undeclared", ids(tex(body)))
 
     def test_ordinary_english_passes(self):
         body = "The result holds. The result is short. The result again. The result."
+        body += (" We agree that the language agrees with this encoding. "
+                 "An ordinary source uses a strictly limited budget and universe width. "
+                 "Its upper limits are pointwise strict and preserve truth. "
+                 "The weight gives the weighted count.") * 4
         self.assertNotIn("term-undeclared", ids(tex(body)))
 
     def test_generic_algorithm_prose_passes(self):
@@ -524,7 +537,7 @@ class TestTermUndeclared(unittest.TestCase):
             figure = r"\begin{figure}[" + option + r"]\end{figure}"
             with self.subTest(option=option):
                 self.assertNotIn("term-undeclared", ids(tex(figure * 4)))
-                body = figure * 4 + " An attachment meets it." * 4
+                body = figure * 4 + " A copper vertex of $G$ meets its neighbor." * 4
                 self.assertIn("term-undeclared", ids(tex(body)))
 
 

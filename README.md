@@ -9,7 +9,14 @@ rendered theorem boxes. It never compiles a paper or participates in a LaTeX bui
 
 ## Quick start
 
-The source checker requires Python 3. The PDF annotation extractor requires
+The source checker requires Python 3 and NLTK. Install its language resources once:
+
+```sh
+python3 -m pip install -r /absolute/path/to/style/requirements.txt
+python3 -m nltk.downloader wordnet averaged_perceptron_tagger_eng punkt_tab
+```
+
+The PDF annotation extractor requires
 macOS because it uses Preview's PDFKit annotations.
 
 ```sh
@@ -55,6 +62,7 @@ copy until the edits are accepted.
 
 ```sh
 styleck paper.tex                    # all findings
+styleck --counts paper.tex           # count each lint type, with a total
 styleck --new-since HEAD paper.tex   # findings introduced by this change
 styleck --concordance the paper.tex  # inspect every prose occurrence
 ```
@@ -66,8 +74,12 @@ and verbatim material when applying prose rules. TikZ pictures and
 
 ### Declare assumed vocabulary
 
+Terminology checks compare noun phrases and their contexts with mathematical
+references and ordinary prose. The bundled model includes a complexity profile;
+WordNet supplies mathematical senses and morphology. Checks run offline.
+See [Vocabulary profiles](docs/vocabulary.md) to select a subject or build a profile.
 
-Put field-standard terms that need no local definition in `.styleck-terms`,
+Put additional field-standard terms that need no local definition in `.styleck-terms`,
 one per line. A source-specific `paper-name.styleck-terms` extends the project
 list for `paper-name.tex`.
 
@@ -79,8 +91,10 @@ renewal process
 ```
 
 An `@relative/path.styleck-terms` line imports another vocabulary list; an
-`@relative/path.tex` line imports terms explicitly marked with `\term{...}` in
-that source.
+`@relative/path.tex` line imports terms explicitly marked with `\term{...}` or
+`\deftext{...}` in that source.
+Dictionary inflections and direct derivations share declarations. Declaring a
+head noun such as `vertex` does not also declare a phrase such as `heavy vertex`.
 
 ### Excuse a finding
 

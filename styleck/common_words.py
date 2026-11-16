@@ -70,16 +70,8 @@ example exercise figure formula function idea induction input instance lemma
 notation observation output paragraph proof proposition question reference
 remark result section sentence statement step subsection table theorem theory
 denote existence fail hand hypothesis imply induce lower perform yield
+agree budget encode language ordinary pointwise source strict truth universe
+upper weight width
 """
 
 COMMON_WORDS = frozenset(_WORDS.split())
-
-# Latin and Greek plurals which the ordinary -s rule cannot fold.
-IRREGULAR_PLURALS = {
-    "analyses": "analysis", "apices": "apex", "bases": "basis",
-    "criteria": "criterion", "foci": "focus", "formulae": "formula",
-    "hypotheses": "hypothesis", "indices": "index", "lemmata": "lemma",
-    "loci": "locus", "matrices": "matrix", "maxima": "maximum",
-    "minima": "minimum", "phenomena": "phenomenon", "radii": "radius",
-    "simplices": "simplex", "theses": "thesis", "vertices": "vertex",
-}

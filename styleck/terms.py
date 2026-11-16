@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import config_chain
 
-TERM_RE = re.compile(r"\\term\s*\{([^{}]+)\}")
+TERM_RE = re.compile(r"\\(?:term|deftext)\s*\{([^{}]+)\}")
 
 
 def normalize_term(term: str) -> str:
@@ -16,7 +16,7 @@ def normalize_term(term: str) -> str:
 
 
 def introduced_terms(text: str) -> list[str]:
-    r"""Return terms marked with ``\term{...}``, preserving source order."""
+    r"""Return ``\term`` and ``\deftext`` markings in source order."""
     return [" ".join(match.group(1).split()) for match in TERM_RE.finditer(text)]
 
 
@@ -25,7 +25,7 @@ def background_terms(source_path: str) -> frozenset[str]:
 
     A source-specific ``name.styleck-terms`` extends the nearest project-level
     ``.styleck-terms``.  Lines beginning with ``@`` include another term list;
-    a TeX include contributes the terms it explicitly marks with ``\term``.
+    a TeX include contributes its ``\term`` and ``\deftext`` markings.
     """
     found: set[str] = set()
     seen: set[Path] = set()

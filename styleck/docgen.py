@@ -49,6 +49,8 @@ specific line, say so in chat and leave the code alone until you get an answer.
 
 
 def _tag(rule: Rule) -> str:
+    if not rule.enabled_by_default:
+        return "disabled by default"
     if rule.severity == "manual":
         return "judgment"
     if rule.id in FIXERS:
@@ -70,6 +72,8 @@ def _example(marker: str, body: str) -> list[str]:
 def render_rule(rule: Rule) -> list[str]:
     head = f"- **{rule.id}** ({_tag(rule)}) — {rule.summary}"
     lines = textwrap.wrap(head, WRAP, subsequent_indent="  ", break_long_words=False)
+    if not rule.enabled_by_default:
+        lines.append(f"  Inactive unless explicitly selected with `--rules {rule.id}`.")
     if rule.detail:
         for row in textwrap.wrap(rule.detail, WRAP - 2):
             lines.append(f"  {row}")

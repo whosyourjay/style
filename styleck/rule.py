@@ -48,6 +48,7 @@ class Rule:
     detail: str = ""
     bad: str = ""
     good: str = ""
+    enabled_by_default: bool = True
 
     def matches(self, document: Document) -> bool:
         return "*" in self.applies_to or document.suffix in self.applies_to
@@ -107,12 +108,15 @@ def all_rules() -> list[Rule]:
 
 def check_document(document: Document, only: frozenset[str] | None = None) -> list[Violation]:
     """Run every applicable rule over one document, less its written exceptions."""
+    requested = only
     only = selected_rules(document.path, only)
     if only is not None and (unknown := only - REGISTRY.keys()):
         raise ValueError(f"unknown configured rule ids: {', '.join(sorted(unknown))}")
     found: list[Violation] = []
     for rule in all_rules():
         if only is not None and rule.id not in only:
+            continue
+        if not rule.enabled_by_default and (requested is None or rule.id not in requested):
             continue
         if not rule.matches(document):
             continue
