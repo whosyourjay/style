@@ -11,6 +11,7 @@ import re
 from typing import Callable
 
 from .document import Document
+from .selection import selected_rules
 from .rules_tex import (_is_wrappable_prose, _report_short_run,
                         algo_period_offsets, trailing_punct_offsets)
 from .wrap import wrap
@@ -94,6 +95,7 @@ FIXERS: dict[str, Callable[[Document], str]] = {
 
 def apply_fixes(path: str, text: str, only: frozenset[str] | None = None) -> str:
     """Run every applicable fixer until the text stops changing."""
+    only = selected_rules(path, only)
     current = text
     for _ in range(MAX_PASSES):
         start = current

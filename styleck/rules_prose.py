@@ -9,6 +9,8 @@ from .document import COMMENT, TEX_SUFFIXES, Document
 from .rule import ERROR, WARN, Violation, make, register
 from .common_words import COMMON_WORDS, IRREGULAR_PLURALS
 from .terms import TERM_RE, background_terms, introduced_terms, normalize_term
+from .tex_args import heading_regions, optional_arg_at
+from .rules_proof_prose import NAMED_BOUND_RE
 
 PROSE_SUFFIXES = (".md", ".tex", ".txt")
 TEX_ONLY = tuple(sorted(TEX_SUFFIXES))
@@ -29,23 +31,35 @@ VAGUE_REFERENCE_RE = re.compile(
     r"(?:theorem|lemma|proposition|corollary)\b",
     re.I,
 )
-VAGUE_REFERENT_RE = re.compile(
-    r"\b(?:the|this|that)\s+"
-    r"(?:(?!(?:and|as|at|by|for|from|in|of|on|or|to|with)\b)"
-    r"[A-Za-z][A-Za-z-]*\s+){0,2}"
+REFERENCE_MODIFIER = (
+    r"(?!(?:and|as|at|by|for|from|in|of|on|or|to|with)\b)"
+    r"[A-Za-z][A-Za-z-]*\s+"
+)
+ABSTRACT_REFERENCE = (
+    r"\b(?:the|this|that|these|those)\s+"
+    rf"(?:{REFERENCE_MODIFIER}){{0,2}}"
     r"(?:argument|bound|calculation|claim|comparison|conclusion|construction|"
     r"dichotomy|estimate|expression|fact|functional|method|object|order|"
     r"preprocessing|proof|quantity|reduction|remainder|result|side|statement|"
-    r"step|term)\b",
-    re.I,
+    r"step|term)s?\b"
 )
+OBJECT_REFERENCE = (
+    r"\b(?:the|this|these|those)\s+"
+    rf"(?:{REFERENCE_MODIFIER}){{0,2}}"
+    rf"(?:(?:and|or)\s+(?:{REFERENCE_MODIFIER}){{1,2}})?"
+    r"(?:algorithm|circuit|encoding|formulation|function|indicator|map|predicate|"
+    r"procedure|subcircuit)s?\b"
+    r"(?![-A-Za-z]|\s+(?:descriptions?|encodings?|sizes?|gates?|queries|"
+    r"evaluations?|inputs?|outputs?|bits?)\b)"
+)
+VAGUE_REFERENT_RE = re.compile(ABSTRACT_REFERENCE + "|" + OBJECT_REFERENCE, re.I)
 DIRECT_QUALIFIER_RE = re.compile(
-    r"^\s*(?:"
-    r"\$"                                     # the expression, written out
-    r"|(?:[A-Za-z]+[\s~]+){0,3}\\(?:eqref|ref)\{"  # a citation, a few words along
+    r"^[\s~]*(?:"
+    r"(?:of[\s~]+)?\$"                         # the expression or its object
+    r"|(?:[A-Za-z]+[\s~]+){0,3}\\(?:eqref|ref|cite\w*)\b(?:\[[^\]]*\])?\{"
     r")"
 )
-INLINE_QUALIFIER_RE = re.compile(r"\$[^$]+\$|\\(?:eqref|ref)\{")
+INLINE_QUALIFIER_RE = re.compile(r"\$[^$]+\$|\\(?:eqref|ref|cite\w*)\b")
 UNSPECIFIED_CONVENTION_RE = re.compile(
     r"\b(?:a|an|the|some)\s+(?:fixed|usual|standard|chosen)\s+convention\b", re.I
 )
@@ -173,7 +187,10 @@ def check_the_display(document: Document) -> Iterable[Violation]:
 )
 def check_precise_reference(document: Document) -> Iterable[Violation]:
     prose = document.prose_mask()
+    titles = heading_regions(prose)
     for match in VAGUE_REFERENCE_RE.finditer(prose):
+        if _inside(match.start(), titles):
+            continue
         if _referent_follows(document, match.end()):
             continue
         yield make(
@@ -196,21 +213,29 @@ def check_precise_reference(document: Document) -> Iterable[Violation]:
         "functional` often force the reader to search backward. Cite the "
         "equation or result, write the expression, or name the specific "
         "mathematical object. This is a deliberately high-recall warning; "
-        "keep a phrase when its referent is genuinely immediate."
+        "keep a phrase when its referent is genuinely immediate. Preserve "
+        "descriptive section titles and put numbered references in the "
+        "surrounding prose. When symbols already identify circuits, functions, "
+        "or algorithms, prefer them to descriptions such as `these circuits` "
+        "or `the predecessor and successor circuits`. Do not introduce symbols "
+        "merely to replace a clear, short noun."
     ),
     bad="The same estimate proves the claim.",
-    good="Applying \\eqref{eq:local-TV} proves Lemma~\\ref{lem:tail}.",
+    good="Apply \\eqref{eq:local-TV} to prove Lemma~\\ref{lem:tail}.",
 )
 def check_vague_referent(document: Document) -> Iterable[Violation]:
     prose = document.prose_mask()
+    titles = heading_regions(prose)
     background = background_terms(document.path)
     for match in VAGUE_REFERENT_RE.finditer(prose):
+        if _inside(match.start(), titles):
+            continue
         if _referent_follows(document, match.end()):
             continue
         if _referent_inside(document, match.start(), match.end()):
             continue
         noun = match.group(0).split(maxsplit=1)[1]
-        if normalize_term(noun) in background:
+        if normalize_term(noun) in background or NAMED_BOUND_RE.search(noun):
             continue
         yield make(
             document,
@@ -657,7 +682,10 @@ def _without_commands(prose: str) -> str:
     """Blank every TeX command and its argument, keeping all offsets."""
     text = list(prose)
     for match in COMMAND_RE.finditer(prose):
-        text[match.start():match.end()] = " " * (match.end() - match.start())
+        end = match.end()
+        if match.group(0).startswith(r"\begin{"):
+            _, end = optional_arg_at(prose, end)
+        text[match.start():end] = " " * (end - match.start())
     return "".join(text)
 
 

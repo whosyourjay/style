@@ -31,6 +31,16 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--docs", action="store_true", help="print the style guide")
     parser.add_argument("--summary", action="store_true", help="print one line per rule")
+    project = parser.add_mutually_exclusive_group()
+    project.add_argument(
+        "--book", metavar="ROOT", help="check a lecture book, including references and inputs"
+    )
+    project.add_argument(
+        "--pdf", nargs="+", metavar="PDF", help="check rendered TikZ/mdframed theorem boxes"
+    )
+    parser.add_argument(
+        "--orphans", action="store_true", help="with --book, also find unused diagrams"
+    )
     parser.add_argument(
         "--concordance", metavar="WORD",
         help="print every whole-word occurrence in source prose",
@@ -85,6 +95,16 @@ def run(argv: list[str]) -> int:
         for path, outcome in sync(find_targets(root), args.add_import):
             sys.stdout.write(f"{path}: {outcome}\n")
         return 0
+    if args.book:
+        from .book import main as book_main
+        options = ["--orphans"] if args.orphans else []
+        return book_main(options, root=Path(args.book))
+    if args.pdf:
+        from .book_pdf import main as pdf_main
+        return pdf_main(args.pdf)
+    if args.orphans:
+        sys.stderr.write("styleck: --orphans requires --book ROOT\n")
+        return 2
     only = _selected_rules(args.rules)
     files = _collect(args.paths)
     if not files:

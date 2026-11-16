@@ -5,6 +5,9 @@
 These rules cover writing quality only: LaTeX layout, equations, diagrams, and
 prose. They say nothing about code.
 
+For book-wide references, included files, section lengths, and rendered
+theorem boxes, see docs/books.md in the style repository.
+
 Most of them are machine-checked. After you edit a `.tex` file a hook runs
 `styleck` on it, repairs what is mechanical, and reports the rest back to you
 by rule id. Fix what it reports before moving on.
@@ -12,9 +15,9 @@ by rule id. Fix what it reports before moving on.
 Run it yourself at any time:
 
 ```
-python -m styleck path/to/paper.tex        # report
-python -m styleck --fix path/to/paper.tex  # repair what is mechanical
-python -m styleck --concordance the path/to/paper.tex  # inspect every `the`
+python3 -m styleck path/to/paper.tex        # report
+python3 -m styleck --fix path/to/paper.tex  # repair what is mechanical
+python3 -m styleck --concordance the path/to/paper.tex  # inspect every `the`
 ```
 
 Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
@@ -30,7 +33,7 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   Break a longer chain with a sentence of explanation and a new block.
 
 - **eq-needs-align** (warn) — Give each relation a row of its own.
-  One relation per display, or per row of an align, however short the far side is. Record a
+  Give each relation in a derivation its own row, including derivations written inline. Record a
   deliberate exception in a `.styleck-allow` file next to the source.
   ✗
 
@@ -70,13 +73,45 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ```
 
 
+- **math-ellipsis** (error) — Give sequences an explicit index set instead of mathematical
+  ellipses.
+  Replace \dots, \ldots, and \cdots with indexed sets, tuples, sums, or products in inline and
+  display math. Matrix and array layouts are exempt. Record deliberate exceptions in .styleck-
+  allow.
+  ✗ `$x_1,\ldots,x_n$`
+  ✓ `$(x_i)_{i\in[n]}$`
+
+- **math-fraction** (error) — Use typeset fractions instead of bare slashes in math.
+  This includes simple ratios, inline math, superscripts, and subscripts. Use \frac in displays
+  and \frac or \sfrac in inline math and scripts. Preserve prose and whether an equation is
+  inline or displayed. Labels, URLs, and other prose arguments are not mathematical fractions.
+  Quotient notation needs an explicit exception. This rule has no automatic fixer.
+  ✗ `$n^{1/k}$`
+  ✓ `$n^{\frac{1}{k}}$`
+
+- **small-explicit-constants** (judgment) — Prefer a small explicit constant over a new variable
+  name.
+  Introduce a parameter when its role matters, not merely to hide a small number.
+
 ## LaTeX layout
+
+- **algorithm-before-guarantees** (judgment) — Present the algorithm before stating its
+  guarantees.
+  For a constructive result, place a named, boxed algorithm before its guarantee lemma. Refer to
+  that algorithm in the statement and use the proof to verify correctness, running time, and
+  randomness bounds.
 
 - **formalize-reusable-claims** (judgment) — Put reusable mathematical claims in named
   environments.
   A claim that carries part of the proof, is cited later, or introduces several related
   quantities belongs in a lemma, proposition, or definition with a label. Do not leave it as an
   unnumbered assertion between displays.
+
+- **heading-case** (error) — Use title case for chapter titles and sentence case for section
+  titles.
+  Preserve mathematical notation, acronyms, and proper names.
+  ✗ `\section{Bounding the Expected Cost}`
+  ✓ `\section{Bounding the expected cost}`
 
 - **prose-between-blocks** (judgment) — Alternate blocks of text and blocks of equations.
   When a stub of text falls between two displays, either say more, fold the stub into the align
@@ -143,6 +178,14 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `We arrange the deck cleanly.`
   ✓ `We sort the deck.`
 
+- **apply-named-bound** (warn) — Apply the named inequality instead of saying that a bound gives
+  the result.
+  Write `Apply the Chernoff bound to obtain ...`. Use `the` for an established inequality,
+  including the union bound. Avoid `a Chernoff bound gives ...` and `the Chernoff bound gives
+  ...`. The proof step is our application of the result. New variants can use a local exception.
+  ✗ `A Chernoff bound gives the required probability.`
+  ✓ `Apply the Chernoff bound to obtain the required probability.`
+
 - **background-or-defined** (judgment) — Treat a technical phrase as either background knowledge
   or a defined term.
   Record field-standard vocabulary in the applicable `.styleck-terms` file. Introduce other
@@ -166,6 +209,14 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `Abascal, Guruswami, and Kothari prove the bound.`
   ✓ `Abascal et al. prove the bound.`
 
+- **concrete-technical-qualifiers** (judgment) — State the mathematical distinction instead of
+  adding a vague qualifier.
+  A `numerical exponential-time hypothesis` needs an actual time bound and quantifiers. State
+  them if needed, or omit the aside. Use a citation to identify a published hypothesis instead
+  of calling it `printed`. Words such as `fixed` and `specified` must identify a relevant
+  dependence or choice. Do not treat these words as a blacklist; their mathematical role
+  requires review.
+
 - **empty-adjective** (warn) — Cut jargony adjectives that do not change the meaning.
   ✗ `This novel, powerful technique is comprehensive.`
   ✓ `This technique handles every case in one pass.`
@@ -174,6 +225,17 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   If the step really is clear, the reader does not need to be told.
   ✗ `Clearly the potential drops.`
   ✓ `The potential drops because each square shrinks.`
+
+- **gerund-subject** (warn) — Review an '-ing ... verb' sentence: state the action or its result
+  directly.
+  A gerund phrase used as the subject often makes a proof step harder to read: 'Deleting X
+  exposes Y', 'Applying the lemma gives ...', or 'Encoding the cases lets us ...'. Prefer an
+  instruction followed by its consequence, an explicit actor, or the resulting mathematical
+  statement. This is a warning sign, not a ban. Keep a gerund when the activity itself is the
+  subject and that wording is clearest. Headings and introductory phrases such as 'Using X, we
+  ...' are different constructions. The detector covers common finite verbs.
+  ✗ `Deleting $L_T$ exposes the crossing heads.`
+  ✓ `Delete $L_T$. The crossing heads become sources.`
 
 - **hyphen-stack** (warn) — Unpack chains of hyphenated modifiers.
   Prefer a clause or a prepositional phrase to a modifier made from three or more joined words.
@@ -191,6 +253,14 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `maximum-in-degree-three separators`
   ✓ `separators with in-degree at most three`
 
+- **introduce-constructed-objects** (judgment) — Introduce constructed objects explicitly and
+  distinguish them from supplied inputs.
+  Use `Let` or `Define` when first introducing a graph, a vertex, a function, or a parameter.
+  State which graph contains a vertex and give a function's domain and codomain when needed.
+  Reserve `given` and `supplied` for actual inputs or hypotheses. For example, write `Define P
+  and S by ...`, not `The supplied pointer circuits have the following form ...` when
+  constructing them for the first time.
+
 - **jargon-the-x** (judgment) — Do not write "the X" for jargon X the paper has not defined.
   Define technical vocabulary at its first substantive use. Make the referent and quantifier
   explicit: if `the probabilities` means all action probabilities, say so.
@@ -199,6 +269,25 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   Explain a change in chat. The file holds the current state only.
   ✗ `% changed from a linear bound as requested`
 
+- **named-object-reference** (judgment) — Use an object's name when the argument depends on
+  which object it is.
+  If the proof names algorithms D and D_k, use those names where `this procedure`, `the
+  implemented algorithm`, or `the algorithm and its running-time bound` makes the reader
+  reconstruct the referent. Name the functions and parameters on which a constant depends.
+  Identify the cases meant by `early-return branches`. Replace ambiguous possessives such as
+  `its recursion` with the algorithm's name. Use an existing symbol instead of a repeated verbal
+  description of a circuit or function. An immediate, unambiguous pronoun is fine.
+  ✗ `Eventually this procedure participates and is admissible.`
+  ✓ `For sufficiently large $s$, $D_k$ is among the simulated procedures and is admissible.`
+
+- **named-reference** (warn) — Replace `named` with the symbol or cross-reference that
+  identifies the object.
+  `The named subcircuits` and `the named lemma` make the reader search for a name. Write the
+  symbols or link to the result. Keep `named` only when the act of naming or a technical naming
+  convention matters.
+  ✗ `The circuit retains the named subcircuits.`
+  ✓ `The circuit retains $P_0,S_0,H$.`
+
 - **one-noun-one-concept** (judgment) — Give each technical concept one noun, and each noun one
   role.
   Do not alternate among near-synonyms such as `outcome`, `action`, and `label`. If they denote
@@ -206,11 +295,38 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   probability a `hazard`, or an inserted word a `payload`, unless the new term does mathematical
   work.
 
+- **polynomial-overhead** (warn) — Give a bound for simulation overhead and state its
+  dependencies.
+  A `fixed polynomial overhead of its running time` leaves the polynomial's arguments and degree
+  unspecified. Write a bound or reference one, and say which parameters its constants may depend
+  on. This matters when the proof varies parameters to obtain a subexponential running time.
+  ✗ `Simulation takes a fixed polynomial overhead of its running time.`
+  ✓ `The simulation takes at most $(rT)^c$ steps for an absolute constant $c$.`
+
 - **precise-reference** (warn) — Replace vague theorem references with a numbered reference.
   Write `Theorem~\ref{...}` or name the exact result. A nearby result may feel obvious while
   writing but becomes ambiguous after revision.
   ✗ `The theorem also permits zero probabilities.`
   ✓ `Theorem~\ref{thm:main} also permits zero probabilities.`
+
+- **proof-step-action** (warn) — Use the action verb in a proof step.
+  Prefer `apply`, `compute`, `construct`, `verify`, `simulate`, or `halt` to `is an application
+  of`, `is a computation of`, or `reaches its completion`. State what the chosen witness proves
+  instead of making `its existence` the actor. This rule concerns descriptions of proof steps.
+  Also avoid abstract actors such as `the completeness guarantee supplies ...`; invoke the
+  precise condition and state what follows. Mathematical definitions and predicates do not need
+  action verbs.
+  ✗ `Simulation reaches its completion.`
+  ✓ `$D_k$ halts.`
+
+- **prose-clause-separator** (warn) — Almost never join prose sentences with a colon or
+  semicolon.
+  Use separate sentences or a direct conjunction. Capitalizing the clause after a colon does not
+  resolve this rule. The detector skips mathematics, literal syntax, headings, short labels, and
+  colons introducing lists or displays. Record a deliberate exception in .styleck-allow.
+  Rewriting clauses requires judgment, so there is no automatic fixer.
+  ✗ `The algorithm need not find this witness: its existence suffices.`
+  ✓ `The algorithm need not find this witness. Its existence suffices.`
 
 - **state-conventions** (warn) — State boundary and degeneracy conventions in concrete terms.
   Do not hide behavior behind a `fixed`, `usual`, or `standard` convention. Say what happens
@@ -272,9 +388,12 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   bound`, `the same expression`, and `the functional` often force the reader to search backward.
   Cite the equation or result, write the expression, or name the specific mathematical object.
   This is a deliberately high-recall warning; keep a phrase when its referent is genuinely
-  immediate.
+  immediate. Preserve descriptive section titles and put numbered references in the surrounding
+  prose. When symbols already identify circuits, functions, or algorithms, prefer them to
+  descriptions such as `these circuits` or `the predecessor and successor circuits`. Do not
+  introduce symbols merely to replace a clear, short noun.
   ✗ `The same estimate proves the claim.`
-  ✓ `Applying \eqref{eq:local-TV} proves Lemma~\ref{lem:tail}.`
+  ✓ `Apply \eqref{eq:local-TV} to prove Lemma~\ref{lem:tail}.`
 
 - **voice-hedge** (warn) — Drop hedges like `it can be shown that`.
   State the claim, or point at the argument that proves it.
@@ -295,6 +414,11 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   ✗ `A zero-path residual is accepted exactly when it is empty.`
   ✓ `Accept a zero-path residual exactly when it is empty.`
 
+- **wordy-math-condition** (warn) — State a condition on an expression directly, rather than
+  describing its value in words.
+  ✗ `A zero value of $H(x)$ leaves a direct edge.`
+  ✓ `When $H(x)=0$, keep a direct edge.`
+
 ## Diagrams
 
 - **diagram-as-code** (judgment) — Treat a diagram as code: loops, functions, derived
@@ -309,8 +433,8 @@ Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.
   Editing the label then happens in one place, next to the prose.
 
 - **diagram-visual** (judgment) — Draw the object, do not describe it in boxes.
-  Boxes holding equations or lemma names with arrows between them are a weak diagram. A small
-  caption is fine.
+  Use as little text as possible. Boxes holding equations or lemma names with arrows between
+  them are a weak diagram. A small caption is fine.
 
 ## When the checker and your taste disagree
 

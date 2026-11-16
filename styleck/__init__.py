@@ -14,6 +14,9 @@ from .rule import REGISTRY, Violation, all_rules, check_document
 from . import rules_tex  # noqa: F401  (import registers rules)
 from . import rules_prose  # noqa: F401
 from . import rules_manual  # noqa: F401
+from . import rules_math  # noqa: F401
+from . import rules_punctuation  # noqa: F401
+from . import rules_proof_prose  # noqa: F401
 
 __all__ = [
     "Document",

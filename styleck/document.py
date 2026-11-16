@@ -35,7 +35,7 @@ ALGO_ENVS = frozenset({
 
 BEGIN_RE = re.compile(r"\\begin\{([A-Za-z@*]+)\}")
 COMMAND_RE = re.compile(r"\\(?:[A-Za-z@]+\*?|.)", re.S)
-VERBATIM_BRACED_COMMANDS = frozenset({"\\tikzset"})
+VERBATIM_BRACED_COMMANDS = frozenset({"\\tikzset", "\\texttt"})
 TEX_SUFFIXES = frozenset({".tex", ".sty", ".cls", ".tikz"})
 
 

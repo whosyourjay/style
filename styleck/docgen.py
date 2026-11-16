@@ -21,6 +21,9 @@ HEADER = """# Writing style for math papers
 These rules cover writing quality only: LaTeX layout, equations, diagrams, and
 prose. They say nothing about code.
 
+For book-wide references, included files, section lengths, and rendered
+theorem boxes, see docs/books.md in the style repository.
+
 Most of them are machine-checked. After you edit a `.tex` file a hook runs
 `styleck` on it, repairs what is mechanical, and reports the rest back to you
 by rule id. Fix what it reports before moving on.
@@ -28,9 +31,9 @@ by rule id. Fix what it reports before moving on.
 Run it yourself at any time:
 
 ```
-python -m styleck path/to/paper.tex        # report
-python -m styleck --fix path/to/paper.tex  # repair what is mechanical
-python -m styleck --concordance the path/to/paper.tex  # inspect every `the`
+python3 -m styleck path/to/paper.tex        # report
+python3 -m styleck --fix path/to/paper.tex  # repair what is mechanical
+python3 -m styleck --concordance the path/to/paper.tex  # inspect every `the`
 ```
 
 Tags below: **auto-fix** means `--fix` repairs it, so do not hand-edit those.

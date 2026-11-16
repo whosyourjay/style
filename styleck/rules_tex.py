@@ -8,6 +8,7 @@ from typing import Iterable
 
 from .document import ALGO, COMMENT, DISPLAY, INLINE, TEX_SUFFIXES, Document, Span
 from .rule import ERROR, WARN, Violation, at_line, make, register
+from .tex_args import braced_arg_at, optional_arg_at, visible_source
 from .wrap import WRAP_TARGET, first_atom
 
 TEX = tuple(sorted(TEX_SUFFIXES))
@@ -80,7 +81,9 @@ def _nested_env_regions(body: str) -> list[tuple[int, int]]:
 
     regions = []
     for match in NESTED_ENV_RE.finditer(body):
-        if match.start() == 0:
+        if match.start() == 0 or match.group(1) in (
+            ALIGN_FAMILY | {"aligned", "alignedat", "split"}
+        ):
             continue
         regions.append((match.start(), _find_env_end(body, match.group(1), match.end())))
     return regions
@@ -96,12 +99,12 @@ def _depth_zero_positions(body: str, pattern: re.Pattern) -> list[int]:
         start = match.start()
         if any(low <= start < high for low, high in blocked):
             continue
-        if _brace_depth(body, start) == 0:
+        if _delimiter_depth(body, start) == 0:
             found.append(start)
     return found
 
 
-def _brace_depth(body: str, index: int) -> int:
+def _delimiter_depth(body: str, index: int) -> int:
     """Group depth at `index`, counting a literal `\\{` set brace as a group."""
     depth = 0
     position = 0
@@ -112,9 +115,9 @@ def _brace_depth(body: str, index: int) -> int:
             depth += (escaped == "{") - (escaped == "}")
             position += 2
             continue
-        if char == "{":
+        if char in "{([":
             depth += 1
-        elif char == "}":
+        elif char in "})]":
             depth -= 1
         position += 1
     return depth
@@ -153,8 +156,9 @@ def trailing_punct_offsets(document: Document) -> list[tuple[int, str]]:
     characters are punctuation and which are matrix entries.
     """
     found = []
+    source = visible_source(document)
     for span in _body_spans(document, DISPLAY):
-        body = document.text[span.start:span.end]
+        body = source[span.start:span.end]
         blocked = _nested_env_regions(body)
         for match in TRAILING_PUNCT_RE.finditer(body):
             start = match.start(1)
@@ -236,28 +240,29 @@ def _chains(body: str) -> Iterable[tuple[int, int, bool]]:
     applies_to=TEX,
     summary="Give each relation a row of its own.",
     detail=(
-        "One relation per display, or per row of an align, however short the "
-        "far side is. Record a deliberate exception in a `.styleck-allow` "
+        "Give each relation in a derivation its own row, including derivations "
+        "written inline. Record a deliberate exception in a `.styleck-allow` "
         "file next to the source."
     ),
     bad="\\begin{align}\n  f(x) &= g(x) = h(x)\n\\end{align}",
     good="\\begin{align}\n  f(x) &= g(x) \\\\\n       &= h(x)\n\\end{align}",
 )
 def check_eq_needs_align(document: Document) -> Iterable[Violation]:
-    for span in _body_spans(document, DISPLAY):
-        body = document.text[span.start:span.end]
+    source = visible_source(document)
+    for span in _body_spans(document, DISPLAY) + _body_spans(document, INLINE):
+        body = source[span.start:span.end]
         rowed = span.env in ALIGN_FAMILY
         for offset, count, listed in _chains(body):
             yield make(
                 document,
                 "eq-needs-align",
                 span.start + offset,
-                _align_message(count, listed, rowed),
+                _align_message(count, listed, rowed, span.kind == INLINE),
             )
 
 
-def _align_message(count: int, listed: bool, rowed: bool) -> str:
-    subject = "row" if rowed else "display"
+def _align_message(count: int, listed: bool, rowed: bool, inline: bool = False) -> str:
+    subject = "row" if rowed else "inline math" if inline else "display"
     if listed:
         return f"{subject} holds {count} separate equations; align them on the relation"
     remedy = "give each its own row" if rowed else "split it into an align"
@@ -479,3 +484,76 @@ def check_algo_period(document: Document) -> Iterable[Violation]:
             lineno,
             "single-sentence algorithm step ends with a period; drop it",
         )
+
+
+TITLE_CMD_RE = re.compile(r"\\(chapter|section)\*?")
+SMALL_TITLE_WORDS = {
+    "a", "an", "and", "as", "at", "but", "by", "for", "from", "in",
+    "into", "nor", "of", "on", "or", "per", "the", "to", "vs", "via", "with",
+}
+
+
+def _title_words(title: str) -> list[str]:
+    title = re.sub(r"\$[^$]*\$", " ", title)
+    title = re.sub(r"\\\([^)]*\\\)", " ", title)
+    title = re.sub(r"\\[`'\"^~=.]\\?\{([A-Za-z])\}", r"\1", title)
+    title = re.sub(r"\\(?:label|ref|eqref|autoref|pageref|[cC]ref)\*?\{[^}]*\}",
+                   " ", title)
+    title = re.sub(r"\\(?:no)?cite[tp]?\*?(?:\[[^\]]*\])?\{[^}]*\}", " ", title)
+    title = re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?", " ", title)
+    return re.findall(r"[A-Za-z][A-Za-z'’-]*", title.replace("~", " "))
+
+
+def _chapter_title_ok(title: str) -> bool:
+    words = _title_words(title)
+    for index, word in enumerate(words):
+        if 0 < index < len(words) - 1 and (
+            word.lower() in SMALL_TITLE_WORDS or len(word) <= 3
+        ):
+            continue
+        if not word[0].isupper():
+            return False
+    return True
+
+
+def _section_title_ok(title: str) -> bool:
+    words = _title_words(title)
+    if not words:
+        return True
+    if not title.lstrip().startswith("$"):
+        if not words[0][0].isupper():
+            return False
+        words = words[1:]
+    for word in words:
+        parts = re.split(r"-+", word)
+        proper_name = len(parts) > 1 and all(p and p[0].isupper() for p in parts)
+        if not (word[0].islower() or word.isupper() or proper_name):
+            return False
+    return True
+
+
+@register(
+    id="heading-case",
+    section="LaTeX layout",
+    severity=ERROR,
+    applies_to=TEX,
+    summary="Use title case for chapter titles and sentence case for section titles.",
+    detail="Preserve mathematical notation, acronyms, and proper names.",
+    bad=r"\section{Bounding the Expected Cost}",
+    good=r"\section{Bounding the expected cost}",
+)
+def check_heading_case(document: Document) -> Iterable[Violation]:
+    source = visible_source(document)
+    pos = 0
+    while match := TITLE_CMD_RE.search(source, pos):
+        kind = match.group(1)
+        _, after = optional_arg_at(source, match.end())
+        title, end = braced_arg_at(source, after)
+        pos = max(end, match.end() + 1)
+        if title is None or not document.in_body(match.start()):
+            continue
+        valid = _chapter_title_ok(title) if kind == "chapter" else _section_title_ok(title)
+        if not valid:
+            case = "title case" if kind == "chapter" else "sentence case"
+            yield make(document, "heading-case", match.start(),
+                       f"\\{kind} title should use {case}: {title!r}")

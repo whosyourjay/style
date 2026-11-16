@@ -14,6 +14,9 @@ require human judgment appear in the generated guide but have no detector.
 Each paper repository can keep its own workflow instructions while importing
 the generated writing guide:
 
+For sibling repositories, read `../style/claude.md` from their agent instructions.
+This uses the central copy directly. To distribute a generated copy instead:
+
 ```sh
 python -m styleck --sync ~/research
 python -m styleck --sync ~/research --add-import
@@ -43,6 +46,11 @@ def check_eq_trailing_punct(document): ...
 The generated guide includes it on the next `styleck --docs`. Add a rule with
 no reliable detector to `styleck/rules_manual.py` via `manual(...)`; the guide
 tags it **judgment**, and the checker never reports it.
+
+Lecture books call the same registry detectors through `styleck/book.py`,
+which maps their ids to the existing E-numbered diagnostics. TeX layout rules
+live in `rules_tex.py`; notation rules live in `rules_math.py`.
+Keep project-specific conventions in the project's adapter.
 
 To make a rule auto-fixable, add an entry to `FIXERS` in
 `styleck/fixers.py`. The fuzz tests then require the repair to be idempotent,

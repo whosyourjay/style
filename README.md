@@ -2,8 +2,8 @@
 
 `styleck` helps a human and an editing agent revise mathematical papers. It
 turns PDF markup into a structured edit queue and checks the resulting LaTeX
-for common writing problems. It reads source files only: it never compiles a
-paper or participates in a LaTeX build.
+for common writing problems. It also checks lecture-book references and
+rendered theorem boxes. It never compiles a paper or participates in a LaTeX build.
 
 ![Preview annotations extracted into a JSON edit queue](assets/pdfmarks-workflow.png)
 
@@ -66,6 +66,7 @@ and verbatim material when applying prose rules. TikZ pictures and
 
 ### Declare assumed vocabulary
 
+
 Put field-standard terms that need no local definition in `.styleck-terms`,
 one per line. A source-specific `paper-name.styleck-terms` extends the project
 list for `paper-name.tex`.
@@ -92,6 +93,16 @@ so it lapses when that line is rewritten.
 # Fano in the form its readers know
 eq-needs-align: I(X^n;Y)+1
 ```
+
+## Check a lecture book
+
+`styleck --book PATH` checks chapter style, included files, citations, labels,
+and section lengths. Add `--orphans` to audit unused diagrams.
+`styleck --pdf BOOK.pdf` checks rendered TikZ/mdframed theorem boxes.
+See [Lecture-book checks](docs/books.md) for the rule catalog and PDF setup.
+
+The shared [writing guide](claude.md) is generated from the registry. Repositories
+can reference it directly, so an edit here reaches them without copying rules.
 
 ## Optional automation
 

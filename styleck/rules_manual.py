@@ -14,6 +14,7 @@ manual(
     section="Diagrams",
     summary="Draw the object, do not describe it in boxes.",
     detail=(
+        "Use as little text as possible. "
         "Boxes holding equations or lemma names with arrows between them are a "
         "weak diagram. A small caption is fine."
     ),
@@ -145,5 +146,23 @@ manual(
         "several related quantities belongs in a lemma, proposition, or "
         "definition with a label. Do not leave it as an unnumbered assertion "
         "between displays."
+    ),
+)
+
+manual(
+    id="small-explicit-constants",
+    section="Equations",
+    summary="Prefer a small explicit constant over a new variable name.",
+    detail="Introduce a parameter when its role matters, not merely to hide a small number.",
+)
+
+manual(
+    id="algorithm-before-guarantees",
+    section="LaTeX layout",
+    summary="Present the algorithm before stating its guarantees.",
+    detail=(
+        "For a constructive result, place a named, boxed algorithm before its "
+        "guarantee lemma. Refer to that algorithm in the statement and use the "
+        "proof to verify correctness, running time, and randomness bounds."
     ),
 )

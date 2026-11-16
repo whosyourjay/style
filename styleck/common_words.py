@@ -65,10 +65,11 @@ maximum member minimum namely negative nonempty odd ordering pairwise
 polynomial positive precisely prescribed relative respective search subset
 superset triple union whenever workspace
 algorithm analysis appendix argument assumption bound bounded claim
-complexity computation conclusion construction corollary definition equation
+complexity computation conclusion construct construction corollary definition equation
 example exercise figure formula function idea induction input instance lemma
 notation observation output paragraph proof proposition question reference
 remark result section sentence statement step subsection table theorem theory
+denote existence fail hand hypothesis imply induce lower perform yield
 """
 
 COMMON_WORDS = frozenset(_WORDS.split())

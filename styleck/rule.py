@@ -12,6 +12,7 @@ from typing import Callable, Iterable
 
 from .allow import filter_allowed
 from .document import Document
+from .selection import selected_rules
 
 ERROR = "error"
 WARN = "warn"
@@ -106,6 +107,9 @@ def all_rules() -> list[Rule]:
 
 def check_document(document: Document, only: frozenset[str] | None = None) -> list[Violation]:
     """Run every applicable rule over one document, less its written exceptions."""
+    only = selected_rules(document.path, only)
+    if only is not None and (unknown := only - REGISTRY.keys()):
+        raise ValueError(f"unknown configured rule ids: {', '.join(sorted(unknown))}")
     found: list[Violation] = []
     for rule in all_rules():
         if only is not None and rule.id not in only:

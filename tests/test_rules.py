@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import sys
 import tempfile
 import unittest
@@ -268,6 +269,26 @@ class TestProse(unittest.TestCase):
     def test_bare_abstract_referent_is_flagged(self):
         self.assertIn("vague-referent", ids(tex("The functional is bounded.")))
 
+    def test_descriptive_titles_keep_references_in_prose(self):
+        rng = random.Random(7104)
+        titles = [
+            "Proof of the intersection lemma",
+            "Proof of the coset degree bound",
+            r"Proof of the \emph{coset} degree bound",
+        ]
+        for _ in range(40):
+            command = rng.choice(["chapter", "section", "subsection", "paragraph"])
+            star = rng.choice(["", "*"])
+            short = rng.choice(["", "[The bound]"])
+            heading = "\\" + command + star + short + "{" + rng.choice(titles) + "}"
+            with self.subTest(heading=heading):
+                findings = ids(tex(heading))
+                self.assertNotIn("vague-referent", findings)
+                self.assertNotIn("precise-reference", findings)
+                body = heading + "\nThe bound holds. The lemma applies."
+                self.assertIn("vague-referent", ids(tex(body)))
+                self.assertIn("precise-reference", ids(tex(body)))
+
     def test_modified_abstract_referent_is_flagged(self):
         body = "The same high-entropy dichotomy proves the converse."
         self.assertIn("vague-referent", ids(tex(body)))
@@ -275,6 +296,16 @@ class TestProse(unittest.TestCase):
     def test_equation_qualified_estimate_passes(self):
         body = r"The estimate \eqref{eq:local} bounds the error."
         self.assertNotIn("vague-referent", ids(tex(body)))
+
+    def test_order_of_explicit_character_passes(self):
+        for phrase in ("The order", "Thus the order", "This implies that the order"):
+            with self.subTest(phrase=phrase):
+                body = phrase + r" of $\chi$ is at most $d$."
+                self.assertNotIn("vague-referent", ids(tex(body)))
+
+    def test_order_without_explicit_object_is_flagged(self):
+        body = "The order of growth is unchanged."
+        self.assertIn("vague-referent", ids(tex(body)))
 
     def test_math_qualifier_before_the_noun_passes(self):
         body = r"We drop the $p\log p$ term shared by every label."
@@ -421,6 +452,31 @@ class TestVoicePassive(unittest.TestCase):
         self.assertNotIn("voice-passive", ids(tex("The search accepts the residual.")))
 
 
+class TestNestedRelations(unittest.TestCase):
+    def test_probability_events_do_not_form_derivation_chains(self):
+        rng = random.Random(6104)
+        delimiters = [("(", ")"), ("[", "]"), (r"\left(", r"\right)")]
+        wrappers = [("$", "$"), (r"\[", r"\]")]
+        for _ in range(80):
+            left, right = rng.choice(delimiters)
+            start, end = rng.choice(wrappers)
+            relation = rng.choice(["=", "<", r"\le"])
+            event = f"Z_{rng.randrange(10)}{relation}{rng.randrange(10)}"
+            event = "(" * rng.randrange(3) + event
+            event += ")" * event.count("(")
+            probability = r"\Pr" + left + event + right
+            with self.subTest(event=probability, wrapper=start):
+                single = tex(start + probability + r"\le p" + end)
+                chain = tex(start + probability + r"\le p\le q" + end)
+                self.assertNotIn("eq-needs-align", ids(single))
+                self.assertIn("eq-needs-align", ids(chain))
+
+    def test_probability_inside_a_product_keeps_outer_chain_check(self):
+        prefix = r"\begin{align*} P &= \prod_{j=1}^n\Pr(Z_j<h)"
+        self.assertNotIn("eq-needs-align", ids(tex(prefix + r"\end{align*}")))
+        self.assertIn("eq-needs-align", ids(tex(prefix + r"\le q\end{align*}")))
+
+
 class TestTermUndeclared(unittest.TestCase):
     def test_repeated_undeclared_word_is_flagged(self):
         body = ("An attachment meets it. A second attachment follows. "
@@ -450,6 +506,26 @@ class TestTermUndeclared(unittest.TestCase):
         body = ("See Lemma~\\ref{lem:one} and Lemma~\\ref{lem:two} and "
                 "Lemma~\\ref{lem:three} and Lemma~\\ref{lem:four}.")
         self.assertNotIn("term-undeclared", ids(tex(body)))
+
+    def test_ordinary_verbs_and_paper_vocabulary_pass(self):
+        words = (
+            "construct constructs constructed constructing denote denoted "
+            "existence fail failed hand hypothesis hypotheses imply implies "
+            "induce induced lower perform performed yield yields"
+        ).split()
+        for word in words:
+            with self.subTest(word=word):
+                self.assertNotIn("term-undeclared", ids(tex((word + " ") * 4)))
+
+    def test_float_options_do_not_hide_undeclared_prose(self):
+        rng = random.Random(5104)
+        for _ in range(30):
+            option = "".join(rng.choices("htbp!", k=rng.randrange(1, 8)))
+            figure = r"\begin{figure}[" + option + r"]\end{figure}"
+            with self.subTest(option=option):
+                self.assertNotIn("term-undeclared", ids(tex(figure * 4)))
+                body = figure * 4 + " An attachment meets it." * 4
+                self.assertIn("term-undeclared", ids(tex(body)))
 
 
 class TestTermHeadCollision(unittest.TestCase):
