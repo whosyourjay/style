@@ -12,7 +12,7 @@ from pathlib import Path
 from functools import lru_cache
 
 from .document import DISPLAY, INLINE, Document
-from .linguistics import Token, lemma, phrase_key, phrases, prose_text, tokens
+from .linguistics import Token, analyze, lemma, phrase_key, phrases, prose_text
 from .terms import introduced_terms
 from .vocabulary import fingerprint, productive_modifiers
 
@@ -86,11 +86,11 @@ def shingles(text: str) -> frozenset[int]:
 def reference(path: Path, profile: str, root: Path):
     members = set()
     document = Document(str(path), expanded(path, root, members))
-    text = prose_text(document)
+    text, candidates = analyze(document)
     names = {phrase_key(term) for term in introduced_terms(document.prose_mask())}
     counts = Counter()
     contexts = defaultdict(Counter)
-    for phrase in phrases(tokens(text), document.spans_of(INLINE, DISPLAY), text):
+    for phrase in candidates:
         counts[phrase.key] += 1
         contexts[phrase.key].update(phrase.context)
     terms = {key: [count, common_context(contexts[key], 8), key in names]

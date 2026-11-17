@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 
-from .document import Document
+from .document import DISPLAY, INLINE, Document
+from .math_dictionary import senses
 from .tex_args import braced_arg_at, optional_arg_at
 
 WORD = re.compile(r"[A-Za-z]+(?:-[A-Za-z]+)*-?\Z")
+COMPOUND = re.compile(r"\b[A-Za-z]+(?:-[A-Za-z]+)+\b|\b[A-Za-z]+-(?=\s+(?:or|and)\b)")
 COMMAND = re.compile(r"\\([A-Za-z@]+\*?|.)")
 TEXT_COMMANDS = frozenset({"term", "deftext", "emph", "textit", "textbf", "textrm", "textsc", "textsf"})
 
@@ -22,15 +25,26 @@ class VocabularySetupError(RuntimeError):
 def resources():
     try:
         from nltk.corpus import wordnet
-        from nltk.tag import PerceptronTagger
-        from nltk.tokenize import PunktTokenizer, TreebankWordTokenizer
         wordnet.ensure_loaded()
-        return wordnet, PerceptronTagger(), TreebankWordTokenizer(), PunktTokenizer("english")
+        return (wordnet,)
     except (ImportError, LookupError) as error:
         raise VocabularySetupError(
-            "terminology checks require NLTK and its English resources; "
-            "install requirements.txt, then run python3 -m nltk.downloader "
-            "wordnet averaged_perceptron_tagger_eng punkt_tab"
+            "terminology checks require NLTK's dictionary; install requirements.txt, "
+            "then run python3 -m nltk.downloader wordnet"
+        ) from error
+
+
+@lru_cache(maxsize=1)
+def parser():
+    try:
+        # The parser is local. urllib3's TLS warning is unrelated to loading it.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL.*", module="urllib3")
+            import spacy
+        return spacy.load("en_core_web_md", exclude=["ner"])
+    except (ImportError, OSError) as error:
+        raise VocabularySetupError(
+            "terminology checks require spaCy's English model; install requirements.txt"
         ) from error
 
 
@@ -100,6 +114,10 @@ class Token:
     start: int
     end: int
     tag: str
+    sentence: int = 0
+    is_math: bool = False
+    pos: str = ""
+    dependency: str = ""
 
     @property
     def key(self) -> str:
@@ -107,20 +125,48 @@ class Token:
         return lemma(self.text, pos)
 
 
-def tokens(text: str) -> list[Token]:
-    _, tagger, tokenizer, sentences = resources()
+def tokenized(nlp, text):
+    parsed = nlp.make_doc(text)
+    compounds = [parsed.char_span(match.start(), match.end()) for match in COMPOUND.finditer(text)]
+    with parsed.retokenize() as retokenizer:
+        for span in compounds:
+            if span is not None and len(span) > 1:
+                retokenizer.merge(span)
+    return parsed
+
+
+def tokens(text: str, math_spans=()) -> list[Token]:
+    analysis = list(text)
+    for span in math_spans:
+        analysis[span.start] = "X"
+    nlp = parser()
+    parsed = nlp(tokenized(nlp, "".join(analysis)))
     result = []
-    for begin, end in sentences.span_tokenize(text):
-        spans = [(begin + left, begin + right)
-                 for left, right in tokenizer.span_tokenize(text[begin:end])]
-        words = [text[left:right] for left, right in spans]
-        # Restore the shared head in “yes- or no-instances” without altering offsets.
-        for i in range(len(words) - 2):
-            if words[i].endswith("-") and words[i + 1] in {"or", "and"} and "-" in words[i + 2]:
-                words[i] += words[i + 2].split("-", 1)[1]
-        result.extend(Token(value, *span, tag)
-                      for (value, tag), span in zip(tagger.tag(words), spans))
+    math_index = 0
+    for sentence, span in enumerate(parsed.sents):
+        for token in span:
+            if token.is_space:
+                continue
+            start, end = token.idx, token.idx + len(token)
+            while math_index < len(math_spans) and math_spans[math_index].end <= start:
+                math_index += 1
+            mathematical = math_index < len(math_spans) and math_spans[math_index].start < end
+            if mathematical:
+                end = max(end, math_spans[math_index].end)
+            word = token.text
+            if (word.endswith("-") and token.i + 2 < len(parsed)
+                    and parsed[token.i + 1].text in {"or", "and"} and "-" in parsed[token.i + 2].text):
+                word += parsed[token.i + 2].text.split("-", 1)[1]
+            result.append(Token(word, start, end, token.tag_, sentence, mathematical,
+                                token.pos_, token.dep_))
     return result
+
+
+def analyze(document: Document):
+    prose = prose_text(document)
+    mathematics = [span for span in document.spans_of(INLINE, DISPLAY)
+                   if span.start >= document.body_start]
+    return prose, phrases(tokens(prose, mathematics), mathematics, prose)
 
 
 @dataclass(frozen=True)
@@ -138,8 +184,8 @@ def content_compound(word: str) -> bool:
     """Function-word prefixes do not introduce an unexplained classifier."""
     if "-" not in word:
         return True
-    tagged = resources()[1].tag(word.split("-"))
-    return any(tag not in {"DT", "PDT", "UH", "CC", "IN", "TO"} for _, tag in tagged[:-1])
+    tagged = parser()(word.replace("-", " "), disable=["parser", "lemmatizer"])
+    return any(token.pos_ not in {"DET", "INTJ", "CCONJ", "ADP", "PART"} for token in tagged[:-1])
 
 
 def phrases(tagged: list[Token], math_spans=(), source: str = "") -> list[Phrase]:
@@ -147,7 +193,15 @@ def phrases(tagged: list[Token], math_spans=(), source: str = "") -> list[Phrase
     result = []
     math_index = 0
     for i, head in enumerate(tagged):
-        if (not head.tag.startswith("NN") or not WORD.fullmatch(head.text)
+        noun = head.pos in {"NOUN", "PROPN"} if head.pos else head.tag.startswith("NN")
+        # English taggers often call a nominal participle (e.g. a matching) a verb.
+        if not noun and head.tag in {"VBG", "VBN"} and senses(lemma(head.text), "noun") and i:
+            previous = tagged[i - 1]
+            noun = previous.sentence == head.sentence and (
+                previous.tag == "DT" or previous.dependency in {"compound", "amod"}
+                or (previous.pos in {"NOUN", "ADJ"} and i + 1 < len(tagged)
+                    and tagged[i + 1].text.casefold() == "of"))
+        if (head.is_math or not noun or not WORD.fullmatch(head.text)
                 or head.text.isupper() or not content_compound(head.text)):
             continue
         while math_index < len(math_spans) and math_spans[math_index].end <= head.end:
@@ -161,7 +215,12 @@ def phrases(tagged: list[Token], math_spans=(), source: str = "") -> list[Phrase
         left = i
         while left > max(0, i - 3):
             previous = tagged[left - 1]
-            if not previous.tag.startswith(("NN", "JJ")) or not WORD.fullmatch(previous.text):
+            gap = source[previous.end:tagged[left].start]
+            if (previous.is_math or previous.sentence != head.sentence
+                    or not (previous.pos == "ADJ" or previous.tag.startswith(("NN", "JJ"))
+                            or previous.dependency == "amod")
+                    or not WORD.fullmatch(previous.text)
+                    or (source and (len(gap) > 40 or re.search(r"\n\s*\n", gap)))):
                 break
             left -= 1
         for first in range(left, i + 1):
@@ -169,9 +228,11 @@ def phrases(tagged: list[Token], math_spans=(), source: str = "") -> list[Phrase
             context = set()
             for step, origin in ((-1, first - 1), (1, i + 1)):
                 for j in range(origin, origin + step * 7, step):
-                    if not 0 <= j < len(tagged) or tagged[j].text in {".", "!", "?", ";"}:
+                    if (not 0 <= j < len(tagged) or tagged[j].sentence != head.sentence
+                            or tagged[j].text in {".", "!", "?", ";"}):
                         break
-                    if tagged[j].tag.startswith(("NN", "JJ", "VB")) and WORD.fullmatch(tagged[j].text):
+                    if (not tagged[j].is_math and tagged[j].tag.startswith(("NN", "JJ", "VB"))
+                            and WORD.fullmatch(tagged[j].text)):
                         context.add(tagged[j].key)
             key = " ".join([*(token.text.casefold() for token in content[:-1]), lemma(head.text)])
             result.append(Phrase(key, content[0].start, head.end, lemma(head.text),

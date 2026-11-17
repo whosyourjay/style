@@ -12,9 +12,11 @@ from pathlib import Path
 
 from .config import config_chain
 from .document import DISPLAY, INLINE, Document
-from .linguistics import (Phrase, VocabularySetupError, mathematical_contexts,
-                          phrase_key, phrases, prose_text, tokens, word_family)
+from .linguistics import (Phrase, VocabularySetupError, analyze, mathematical_contexts,
+                          phrase_key, prose_text, word_family)
+from .math_dictionary import modifier_heads, senses, usage
 from .terms import background_terms, introduced_terms
+from .word_senses import best_sense
 
 MODEL_PATH = Path(__file__).with_name("data") / "vocabulary.json"
 MIN_USES = 4
@@ -81,12 +83,20 @@ def definitions(document: Document) -> set[str]:
     result.update(phrase_key(f"{match[2]} {match[1]}") for match in predicate.finditer(prose))
     # “We call a vertex heavy if ...” has the same effect.
     naming = re.compile(
-        rf"\bcall\s+(?:a|an)\s+({word})\s+({word})\s+(?:if|when|whenever|iff)\b", re.I)
+        rf"\bcall\s+(?:a|an|the|these|those)\s+({word}(?:\s+{word}){{0,2}})\s+"
+        rf"({word})\s+(?:if|when|whenever|iff)\b", re.I)
     result.update(phrase_key(f"{match[2]} {match[1]}") for match in naming.finditer(prose))
     called = re.compile(
         rf"\b(?:called|termed|named)\s+(?:an?\s+)?"
         rf"({word}(?:\s+{word}){{0,3}}?)\s+(?:if|when|whenever|iff|provided)\b", re.I)
     result.update(phrase_key(match[1]) for match in called.finditer(prose))
+    nominal = re.compile(
+        rf"\b(?:a|an)\s+({word}(?:\s+{word}){{0,3}})\s+(?:is|means|denotes)\s+(?:a|an)\s+{word}", re.I)
+    result.update(phrase_key(match[1]) for match in nominal.finditer(prose))
+    explicit = re.compile(
+        rf"\b(?:define|refer\s+to)\s+(?:a\s+|an\s+|the\s+)?"
+        rf"({word}(?:\s+{word}){{0,3}}?)\s+as\b", re.I)
+    result.update(phrase_key(match[1]) for match in explicit.finditer(prose))
     return result
 
 
@@ -188,13 +198,15 @@ class Evidence:
         return selected
 
     def standard(self, key: str) -> bool:
-        return len(self.support[key]) >= MIN_DOCUMENTS or bool(mathematical_contexts(key))
+        return (len(self.support[key]) >= MIN_DOCUMENTS or bool(mathematical_contexts(key))
+                or bool(senses(key)) or usage(key) >= (1 if " " in key else MIN_DOCUMENTS))
 
     def mathematical(self, key: str) -> bool:
         subject_rate = len(self.support[key]) / max(1, self.reference_count)
         ordinary_rate = self.general.get(key, [0])[0] / self.general_documents
         enriched = len(self.support[key]) >= MIN_DOCUMENTS and subject_rate > 4 * ordinary_rate
-        return bool(mathematical_contexts(key)) or len(self.defined[key]) >= 2 or enriched
+        return (bool(mathematical_contexts(key)) or bool(senses(key))
+                or len(self.defined[key]) >= 2 or enriched)
 
     def reason(self, uses: list[Phrase]) -> str | None:
         key, head = uses[0].key, uses[0].head
@@ -209,34 +221,37 @@ class Evidence:
         sense_overlap = max((similarity(context, example, *weights)
                              for example in mathematical_contexts(key)), default=0.0)
         if self.standard(key):
-            if (ordinary[0] >= MIN_DOCUMENTS and math_uses >= MIN_USES and len(field_words) >= 2
-                    and max(overlap, field_overlap, sense_overlap) < 0.15):
-                return "its mathematical context differs from the established reference uses"
+            if (senses(key) and math_uses >= MIN_USES and len(field_words) >= 2
+                    and best_sense(key, context)[0] < 0.4):
+                return "its use does not match the dictionary's established senses"
             return None
         modifiers = key.split()[:-1]
-        if modifiers and all(word in self.modifiers for word in modifiers) and self.standard(head):
+        if modifiers and self.standard(head) and all(
+                word in self.modifiers or len(modifier_heads(word)) >= 4
+                or best_sense(word, context | {head})[0] >= 0.75
+                or best_sense(word, context | {head}, mathematical=True)[0] >= 0.6
+                for word in modifiers):
             return None
         compound = bool(modifiers) or "-" in key
-        mathematical = self.mathematical(head) or math_uses >= 2 or len(field_words) >= 2
+        mathematical = self.mathematical(head) or math_uses >= 2
         if not mathematical:
             return None
         if ordinary[0] >= MIN_DOCUMENTS:
             # A common word only merits a warning when its mathematical use differs
             # from the ordinary contexts, with repeated evidence beyond proximity.
             if (self.standard(head) or math_uses < 2 or len(field_words) < 2
-                    or max(overlap, field_overlap) >= 0.15):
+                    or max(overlap, field_overlap) >= 0.15 or best_sense(key, context)[0] >= 0.75):
                 return None
             return "its repeated mathematical use differs from the ordinary reference contexts"
-        if compound and self.standard(head):
-            return f"no reference entry establishes the phrase, although '{head}' is standard"
+        if compound and (self.standard(head) or (math_uses >= 2 and len(field_words) >= 2)):
+            return "a repeated mathematical object has an unexplained classifier"
         if math_uses >= 2 and field_words:
             return "its repeated mathematical use has little support in the reference texts"
         return None
 
 
 def findings(document: Document):
-    prose = prose_text(document)
-    candidates = phrases(tokens(prose), document.spans_of(INLINE, DISPLAY), prose)
+    prose, candidates = analyze(document)
     groups = defaultdict(list)
     for candidate in candidates:
         groups[candidate.key].append(candidate)
